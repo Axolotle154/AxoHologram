@@ -2,7 +2,7 @@
 
 Sistema de hologramas para **Paper** basado en **Display Entities**.
 
-El plugin está orientado a hologramas de texto, ítem y bloque, con edición por comandos, páginas, formato avanzado de texto e integración opcional con FancyNPCs.
+AxoHologram está orientado a hologramas de texto, ítem y bloque, con edición por comandos, páginas, formato avanzado de texto, animaciones configurables e integraciones opcionales.
 
 ## Requisitos
 
@@ -12,40 +12,18 @@ El plugin está orientado a hologramas de texto, ítem y bloque, con edición po
 ## Características
 
 - Hologramas basados en `TextDisplay`, `ItemDisplay` y `BlockDisplay`
-- Tipos soportados:
-  - `TEXT`
-  - `ITEM`
-  - `BLOCK`
-- MiniMessage soportado en texto
-- Colores **HEX**
-- Formato **legacy** con `&` y `§`
+- Tipos de línea: `TEXT`, `ITEM`, `BLOCK`
+- Texto con MiniMessage, HEX y formato legacy `&` / `§`
 - PlaceholderAPI opcional
 - MiniPlaceholders opcional
 - Páginas múltiples por holograma
-- Visibilidad por:
-  - todos
-  - manual
-  - permiso
-- Estilo configurable:
-  - `billboard`
-  - `scale`
-  - `shadow`
-  - `background`
-  - `text shadow`
-  - `brightness`
-  - `alignment`
-- Posicionamiento:
-  - mover al jugador
-  - mover a coordenadas
-  - rotación horizontal
-  - rotación vertical
-  - offset base del holograma
-  - offset por línea
-- Integración opcional con **FancyNPCs**
-  - vincular hologramas a un NPC
-  - seguimiento automático de posición
-- Archivos separados por holograma en:
-  - `plugins/AxoHologram/holograms/<id>.yml`
+- Visibilidad por `all`, `manual` o `permission`
+- Estilo configurable: `billboard`, `scale`, `shadow`, `background`, `brightness`, `alignment`
+- Posicionamiento por coordenadas, rotación, offset base y offset por línea
+- Animaciones de texto y display desde un único `animations.yml`
+- Integración opcional con FancyNPCs
+- API pública para otros plugins
+- Archivos separados por holograma en `plugins/AxoHologram/holograms/<id>.yml`
 
 ## Instalación
 
@@ -55,8 +33,8 @@ El plugin está orientado a hologramas de texto, ítem y bloque, con edición po
 mvn clean package
 ```
 
-2. Copia el jar generado en `plugins/`
-3. Inicia el servidor
+2. Copia el jar generado en `plugins/`.
+3. Inicia el servidor.
 
 El jar se genera en:
 
@@ -91,7 +69,7 @@ Comandos equivalentes:
 | `/holograma create <id>` | Compatibilidad legacy, crea un holograma `text` |
 | `/holograma delete <id>` | Elimina un holograma |
 | `/holograma list` | Lista hologramas cargados |
-| `/holograma reload` | Recarga configuración y hologramas |
+| `/holograma reload` | Recarga configuración, hologramas y animaciones |
 | `/holograma version` | Muestra la versión actual del plugin |
 | `/holograma ver` | Alias de `version` |
 | `/holograma teleport <id>` | Teleporta al jugador al holograma |
@@ -107,7 +85,7 @@ Comandos equivalentes:
 | `/holograma rotatepitch <id> <degrees>` | Cambia la rotación vertical |
 | `/holograma offset <id> <x> <y> <z>` | Cambia el offset base del holograma |
 
-Nota: si un holograma está vinculado a FancyNPCs, no puede moverse manualmente hasta hacer `unlink`.
+Si un holograma está vinculado a FancyNPCs, no puede moverse manualmente hasta hacer `unlink`.
 
 ### Páginas
 
@@ -212,23 +190,55 @@ Soporta:
 - Legacy `§`
 - HEX `&#RRGGBB`
 - HEX estilo Bungee `&x&F&F&0&0&F&F`
+- Animaciones con `<#ANIM:nombre>texto</#ANIM>`
 
-Ejemplos válidos:
+Ejemplos:
 
 ```text
 <red>Hola
 &aHola
 &#9D00FF&lTexto
 &x&9&D&0&0&F&FTexto
+<#ANIM:rainbow>Hello</#ANIM>
+<#ANIM:pulse_blue>Store</#ANIM>
+```
+
+## Animaciones
+
+Todas las animaciones se cargan desde un único archivo:
+
+```text
+plugins/AxoHologram/animations.yml
+```
+
+No se usa carpeta `animations/`. El archivo contiene:
+
+- configuración global
+- animaciones de texto
+- animaciones display
+- animaciones custom
+- presets
+- asignaciones por holograma
+
+Ejemplo de asignación por holograma:
+
+```yaml
+holograms:
+  spawn_info:
+    display-animation: cinematic_idle
+```
+
+Ejemplo de animación de texto:
+
+```text
+<#ANIM:wave_aqua>Coins</#ANIM>
 ```
 
 ## Integraciones opcionales
 
 ### PlaceholderAPI
 
-Si está instalado y habilitado en config:
-
-- se parsean placeholders por jugador en texto
+Si está instalado y habilitado en config, se parsean placeholders por jugador en texto.
 
 ### FancyNPCs
 
@@ -246,7 +256,12 @@ Si está instalado y habilitado en config:
 - los hologramas con placeholders detectados entran en el ciclo de refresh periódico
 
 ## API pública
-''''
+
+Otros plugins pueden usar la API con `AxoHologram.getAPI()` o mediante `ServicesManager`.
+
+Dependencia Maven recomendada si publicas AxoHologram en JitPack:
+
+```xml
 <repositories>
     <repository>
         <id>jitpack.io</id>
@@ -262,7 +277,9 @@ Si está instalado y habilitado en config:
         <scope>provided</scope>
     </dependency>
 </dependencies>
-''''
+```
+
+Los hologramas temporales no se guardan en YAML y se eliminan al recargar o apagar el plugin.
 
 ## Archivos de configuración
 
@@ -271,10 +288,11 @@ Se generan:
 ```text
 plugins/AxoHologram/config.yml
 plugins/AxoHologram/messages.yml
+plugins/AxoHologram/animations.yml
 plugins/AxoHologram/holograms/
 ```
 
-Cada holograma se guarda en su propio archivo:
+Cada holograma persistente se guarda en su propio archivo:
 
 ```text
 plugins/AxoHologram/holograms/spawn.yml
@@ -287,3 +305,4 @@ plugins/AxoHologram/holograms/rules.yml
 - El plugin está orientado a **Paper**, no a Bukkit/Spigot como target principal.
 - Los hologramas simples de texto pueden renderizarse como un solo `TextDisplay`.
 - Los hologramas vinculados a FancyNPCs priorizan la posición del NPC sobre movimiento manual.
+- Los hologramas temporales creados por API no se guardan en YAML.
