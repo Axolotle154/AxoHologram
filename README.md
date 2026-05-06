@@ -247,6 +247,21 @@ Si está instalado y habilitado en config:
 
 ## API pública
 
+<repositories>
+    <repository>
+        <id>jitpack.io</id>
+        <url>https://jitpack.io</url>
+    </repository>
+</repositories>
+
+<dependencies>
+    <dependency>
+        <groupId>com.github.AxoStudio</groupId>
+        <artifactId>AxoHologram</artifactId>
+        <version>1.1.4-alpha</version>
+        <scope>provided</scope>
+    </dependency>
+</dependencies>
 
 ## Archivos de configuración
 
