@@ -2,30 +2,30 @@
 
 Sistema de hologramas para **Paper** basado en **Display Entities**.
 
-AxoHologram está orientado a hologramas de texto, ítem y bloque, con edición por comandos, páginas, formato avanzado de texto, animaciones configurables e integraciones opcionales.
+AxoHologram esta orientado a hologramas de texto, item y bloque, con edicion por comandos, paginas, formato avanzado de texto, animaciones configurables e integraciones opcionales.
 
 ## Requisitos
 
 - **Paper** `1.21.4+`
 - **Java** `25+`
 
-## Características
+## Caracteristicas
 
 - Hologramas basados en `TextDisplay`, `ItemDisplay` y `BlockDisplay`
-- Tipos de línea: `TEXT`, `ITEM`, `BLOCK`
-- Texto con MiniMessage, HEX y formato legacy `&` / `§`
+- Tipos de linea: `TEXT`, `ITEM`, `BLOCK`
+- Texto con MiniMessage, HEX y formato legacy `&` / `\u00A7`
 - PlaceholderAPI opcional
 - MiniPlaceholders opcional
-- Páginas múltiples por holograma
+- Paginas multiples por holograma
 - Visibilidad por `all`, `manual` o `permission`
 - Estilo configurable: `billboard`, `scale`, `shadow`, `background`, `brightness`, `alignment`
-- Posicionamiento por coordenadas, rotación, offset base y offset por línea
-- Animaciones de texto y display desde un único `animations.yml`
-- Integración opcional con FancyNPCs
-- API pública para otros plugins
+- Posicionamiento por coordenadas, rotacion, offset base y offset por linea
+- Animaciones de texto y display desde un unico `animations.yml`
+- Integracion opcional con FancyNPCs
+- API publica para otros plugins
 - Archivos separados por holograma en `plugins/AxoHologram/holograms/<id>.yml`
 
-## Instalación
+## Instalacion
 
 1. Compila el proyecto:
 
@@ -61,53 +61,53 @@ Comandos equivalentes:
 
 ## Comandos
 
-### Gestión básica
+### Gestion basica
 
-| Comando | Descripción |
+| Comando | Descripcion |
 |---|---|
 | `/holograma create <text\|item\|block> <id>` | Crea un holograma nuevo |
 | `/holograma create <id>` | Compatibilidad legacy, crea un holograma `text` |
 | `/holograma delete <id>` | Elimina un holograma |
 | `/holograma list` | Lista hologramas cargados |
-| `/holograma reload` | Recarga configuración, hologramas y animaciones |
-| `/holograma version` | Muestra la versión actual del plugin |
+| `/holograma reload` | Recarga configuracion, hologramas y animaciones |
+| `/holograma version` | Muestra la version actual del plugin |
 | `/holograma ver` | Alias de `version` |
 | `/holograma teleport <id>` | Teleporta al jugador al holograma |
 
-### Posición y movimiento
+### Posicion y movimiento
 
-| Comando | Descripción |
+| Comando | Descripcion |
 |---|---|
-| `/holograma movehere <id>` | Mueve el holograma a tu posición |
+| `/holograma movehere <id>` | Mueve el holograma a tu posicion |
 | `/holograma move <id>` | Alias legacy de `movehere` |
 | `/holograma moveto <id> <x> <y> <z> [yaw] [pitch]` | Mueve el holograma a coordenadas |
-| `/holograma rotate <id> <degrees>` | Cambia la rotación horizontal |
-| `/holograma rotatepitch <id> <degrees>` | Cambia la rotación vertical |
+| `/holograma rotate <id> <degrees>` | Cambia la rotacion horizontal |
+| `/holograma rotatepitch <id> <degrees>` | Cambia la rotacion vertical |
 | `/holograma offset <id> <x> <y> <z>` | Cambia el offset base del holograma |
 
-Si un holograma está vinculado a FancyNPCs, no puede moverse manualmente hasta hacer `unlink`.
+Si un holograma esta vinculado a FancyNPCs, no puede moverse manualmente hasta hacer `unlink`.
 
-### Páginas
+### Paginas
 
-| Comando | Descripción |
+| Comando | Descripcion |
 |---|---|
-| `/holograma page add <id>` | Añade una página |
-| `/holograma page delete <id> <page>` | Elimina una página |
+| `/holograma page add <id>` | Anade una pagina |
+| `/holograma page delete <id> <page>` | Elimina una pagina |
 | `/holograma page remove <id> <page>` | Alias legacy de `page delete` |
-| `/holograma page default <id> <page>` | Define la página por defecto |
+| `/holograma page default <id> <page>` | Define la pagina por defecto |
 | `/holograma page set <id> <page>` | Alias legacy de `page default` |
 
-### Líneas
+### Lineas
 
-| Comando | Descripción |
+| Comando | Descripcion |
 |---|---|
-| `/holograma line add <id> <page> <type> <content>` | Añade una línea |
-| `/holograma line set <id> <page> <line> <content>` | Cambia el contenido de una línea |
-| `/holograma line delete <id> <page> <line>` | Elimina una línea |
+| `/holograma line add <id> <page> <type> <content>` | Anade una linea |
+| `/holograma line set <id> <page> <line> <content>` | Cambia el contenido de una linea |
+| `/holograma line delete <id> <page> <line>` | Elimina una linea |
 | `/holograma line remove <id> <page> <line>` | Alias legacy de `line delete` |
-| `/holograma line offset <id> <page> <line> <x> <y> <z>` | Cambia el offset de una línea |
+| `/holograma line offset <id> <page> <line> <x> <y> <z>` | Cambia el offset de una linea |
 
-Tipos de línea válidos:
+Tipos de linea validos:
 
 ```text
 text
@@ -123,9 +123,9 @@ Ejemplos:
 /holograma line add bloque 1 block GRASS_BLOCK
 ```
 
-### Permisos de visualización
+### Permisos de visualizacion
 
-| Comando | Descripción |
+| Comando | Descripcion |
 |---|---|
 | `/holograma permission <id> <permission>` | Define un permiso personalizado |
 | `/holograma permission <id>` | Limpia el permiso personalizado y vuelve a `all` |
@@ -138,7 +138,7 @@ axohologram.view.<id>
 
 ### Visibilidad y estilo
 
-| Comando | Descripción |
+| Comando | Descripcion |
 |---|---|
 | `/holograma viewdistance <id> <distance>` | Cambia la distancia de render |
 | `/holograma viewdistance <id> default` | Vuelve a la distancia por defecto del config |
@@ -150,35 +150,35 @@ axohologram.view.<id>
 | `/holograma background <id> <color\|transparent\|transparente>` | Cambia el fondo del texto |
 | `/holograma textshadow <id> <true\|false>` | Activa o desactiva sombra de texto |
 | `/holograma brightness <id> <block\|sky> <0-15>` | Cambia el brillo |
-| `/holograma align <id> <center\|left\|right>` | Cambia la alineación del texto |
+| `/holograma align <id> <center\|left\|right>` | Cambia la alineacion del texto |
 
 ### FancyNPCs
 
-| Comando | Descripción |
+| Comando | Descripcion |
 |---|---|
 | `/holograma npc link <holograma> <npc>` | Vincula un holograma a un NPC |
-| `/holograma npc unlink <holograma>` | Quita el vínculo |
-| `/holograma npc info <holograma>` | Muestra el estado del vínculo |
+| `/holograma npc unlink <holograma>` | Quita el vinculo |
+| `/holograma npc info <holograma>` | Muestra el estado del vinculo |
 
 ## Permisos
 
-| Permiso | Descripción |
+| Permiso | Descripcion |
 |---|---|
 | `axohologram.admin` | Acceso administrativo total |
 | `axohologram.create` | Crear hologramas |
 | `axohologram.delete` | Eliminar hologramas |
-| `axohologram.edit` | Permiso legacy de edición general |
+| `axohologram.edit` | Permiso legacy de edicion general |
 | `axohologram.reload` | Recargar el plugin |
 | `axohologram.list` | Listar hologramas |
 | `axohologram.teleport` | Teleport a hologramas |
 | `axohologram.hologram.move` | Mover, rotar y cambiar offset base |
 | `axohologram.hologram.visibility` | Editar visibilidad y view distance |
 | `axohologram.hologram.style` | Editar estilo y apariencia |
-| `axohologram.page.edit` | Editar páginas |
-| `axohologram.line.edit` | Editar líneas |
+| `axohologram.page.edit` | Editar paginas |
+| `axohologram.line.edit` | Editar lineas |
 | `axohologram.permission.edit` | Editar permisos de holograma |
 | `axohologram.npc.edit` | Vincular y desvincular FancyNPCs |
-| `axohologram.npc.info` | Ver información del vínculo con FancyNPCs |
+| `axohologram.npc.info` | Ver informacion del vinculo con FancyNPCs |
 | `axohologram.view.<id>` | Ver un holograma concreto si usa visibilidad por permiso |
 
 ## Formato de texto
@@ -187,7 +187,7 @@ Soporta:
 
 - MiniMessage
 - Legacy `&`
-- Legacy `§`
+- Legacy `\u00A7`
 - HEX `&#RRGGBB`
 - HEX estilo Bungee `&x&F&F&0&0&F&F`
 - Animaciones con `<#ANIM:nombre>texto</#ANIM>`
@@ -205,7 +205,7 @@ Ejemplos:
 
 ## Animaciones
 
-Todas las animaciones se cargan desde un único archivo:
+Todas las animaciones se cargan desde un unico archivo:
 
 ```text
 plugins/AxoHologram/animations.yml
@@ -213,14 +213,14 @@ plugins/AxoHologram/animations.yml
 
 No se usa carpeta `animations/`. El archivo contiene:
 
-- configuración global
+- configuracion global
 - animaciones de texto
 - animaciones display
 - animaciones custom
 - presets
 - asignaciones por holograma
 
-Ejemplo de asignación por holograma:
+Ejemplo de asignacion por holograma:
 
 ```yaml
 holograms:
@@ -228,7 +228,7 @@ holograms:
     display-animation: cinematic_idle
 ```
 
-Ejemplo de animación de texto:
+Ejemplo de animacion de texto:
 
 ```text
 <#ANIM:wave_aqua>Coins</#ANIM>
@@ -238,24 +238,24 @@ Ejemplo de animación de texto:
 
 ### PlaceholderAPI
 
-Si está instalado y habilitado en config, se parsean placeholders por jugador en texto.
+Si esta instalado y habilitado en config, se parsean placeholders por jugador en texto.
 
 ### FancyNPCs
 
-Si está instalado y habilitado en config:
+Si esta instalado y habilitado en config:
 
 - se pueden vincular hologramas a NPCs
-- el holograma sigue la posición del NPC
+- el holograma sigue la posicion del NPC
 
 ### MiniPlaceholders
 
-Si está instalado y habilitado en config:
+Si esta instalado y habilitado en config:
 
 - se parsean placeholders basados en MiniMessage
 - se soportan placeholders globales y por audiencia
-- los hologramas con placeholders detectados entran en el ciclo de refresh periódico
+- los hologramas con placeholders detectados entran en el ciclo de refresh periodico
 
-## API pública
+## API publica
 
 Otros plugins pueden usar la API con `AxoHologram.getAPI()` o mediante `ServicesManager`.
 
@@ -279,9 +279,7 @@ Dependencia Maven recomendada si publicas AxoHologram en JitPack:
 </dependencies>
 ```
 
-Los hologramas temporales no se guardan en YAML y se eliminan al recargar o apagar el plugin.
-
-## Archivos de configuración
+## Archivos de configuracion
 
 Se generan:
 
@@ -302,7 +300,7 @@ plugins/AxoHologram/holograms/rules.yml
 
 ## Notas
 
-- El plugin está orientado a **Paper**, no a Bukkit/Spigot como target principal.
+- El plugin esta orientado a **Paper**, no a Bukkit/Spigot como target principal.
 - Los hologramas simples de texto pueden renderizarse como un solo `TextDisplay`.
-- Los hologramas vinculados a FancyNPCs priorizan la posición del NPC sobre movimiento manual.
+- Los hologramas vinculados a FancyNPCs priorizan la posicion del NPC sobre movimiento manual.
 - Los hologramas temporales creados por API no se guardan en YAML.
