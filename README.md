@@ -246,7 +246,7 @@ Si está instalado y habilitado en config:
 - los hologramas con placeholders detectados entran en el ciclo de refresh periódico
 
 ## API pública
-
+''''
 <repositories>
     <repository>
         <id>jitpack.io</id>
@@ -262,6 +262,7 @@ Si está instalado y habilitado en config:
         <scope>provided</scope>
     </dependency>
 </dependencies>
+''''
 
 ## Archivos de configuración
 
