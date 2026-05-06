@@ -247,32 +247,6 @@ Si está instalado y habilitado en config:
 
 ## API pública
 
-Otros plugins pueden usar la API con `AxoHologram.getAPI()` o mediante `ServicesManager`.
-
-```java
-AxoHologramAPI api = AxoHologram.getAPI();
-
-api.createHologram(
-    "spawn_info",
-    location,
-    List.of("&aBienvenido", "&7Usa /warp")
-);
-
-api.createHologram(
-    "runtime_damage",
-    location,
-    List.of("&c-10 HP"),
-    false
-);
-
-api.createTemporaryHologram(
-    location,
-    List.of("&e+50 XP"),
-    60L
-);
-```
-
-Los hologramas temporales no se guardan en YAML y se eliminan al recargar o apagar el plugin.
 
 ## Archivos de configuración
 
