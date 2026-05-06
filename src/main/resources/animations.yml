@@ -1,0 +1,82 @@
+# ---------------------------------------------------------------- #
+#                   AxoHologram Animations File                    #
+# ---------------------------------------------------------------- #
+# All animations are defined in this single file.
+
+animations:
+  settings:
+    enabled: true
+    tick-rate: 2
+    cache-frames: true
+    async-text-processing: true
+    allow-placeholders-inside-animations: false
+    reduce-quality-on-low-tps: true
+    display-interpolation: true
+
+  text:
+    rainbow:
+      type: rainbow
+      speed: 1
+
+    pulse_blue:
+      type: pulse
+      colors:
+        - "&b"
+        - "&f"
+      speed: 2
+
+    matrix_green:
+      type: matrix
+      color: "&a"
+      speed: 1
+
+    wave_aqua:
+      type: wave
+      color1: "&f"
+      color2: "&b&l"
+      speed: 2
+
+  display:
+    floating:
+      type: float
+      height: 0.25
+      speed: 1
+
+    spinning:
+      type: spin
+      axis: y
+      speed: 2
+
+    cinematic_idle:
+      type: cinematic-idle
+      float-height: 0.2
+      rotation-speed: 1
+      scale-min: 0.98
+      scale-max: 1.02
+
+    orbit_small:
+      type: orbit
+      radius: 1.5
+      speed: 1
+
+  custom:
+    rainbow_cycle:
+      type: frame-animation
+      frames:
+        - "&c{text}"
+        - "&6{text}"
+        - "&e{text}"
+        - "&a{text}"
+        - "&b{text}"
+        - "&d{text}"
+      frame-duration: 2
+      loop: true
+
+  presets:
+    store-title:
+      text-animation: pulse_blue
+      display-animation: cinematic_idle
+
+holograms:
+  example:
+    display-animation: cinematic_idle

@@ -1,0 +1,104 @@
+name: AxoHologram
+version: '${project.version}'
+main: org.axostudio.axohologram.AxoHologram
+api-version: '26.1'
+authors: [AxoStudio]
+description: Display-entity hologram system for Paper.
+folia-supported: true
+
+dependencies:
+  server:
+    PlaceholderAPI:
+      load: BEFORE
+      required: false
+      join-classpath: true
+    MiniPlaceholders:
+      load: BEFORE
+      required: false
+      join-classpath: true
+    FancyNpcs:
+      load: AFTER
+      required: false
+      join-classpath: true
+
+permissions:
+  axohologram.admin:
+    description: Allows full administrative access to AxoHologram.
+    default: op
+    children:
+      axohologram.create: true
+      axohologram.delete: true
+      axohologram.edit: true
+      axohologram.reload: true
+      axohologram.list: true
+      axohologram.teleport: true
+      axohologram.hologram.move: true
+      axohologram.hologram.visibility: true
+      axohologram.hologram.style: true
+      axohologram.page.edit: true
+      axohologram.line.edit: true
+      axohologram.permission.edit: true
+      axohologram.npc.edit: true
+      axohologram.npc.info: true
+      axohologram.command.edit: true
+      axohologram.command.line: true
+      axohologram.command.visibility: true
+      axohologram.command.npc: true
+      axohologram.command.action: true
+  axohologram.create:
+    description: Allows creating new holograms.
+    default: op
+  axohologram.delete:
+    description: Allows deleting holograms.
+    default: op
+  axohologram.edit:
+    description: Allows editing existing holograms.
+    default: op
+  axohologram.reload:
+    description: Allows reloading the plugin configuration.
+    default: op
+  axohologram.list:
+    description: Allows listing holograms.
+    default: op
+  axohologram.teleport:
+    description: Allows teleporting to holograms.
+    default: op
+  axohologram.hologram.move:
+    description: Allows moving holograms and changing their rotation or base offset.
+    default: op
+  axohologram.hologram.visibility:
+    description: Allows editing hologram visibility and view distance.
+    default: op
+  axohologram.hologram.style:
+    description: Allows editing hologram billboard, scale, shadow and text style.
+    default: op
+  axohologram.page.edit:
+    description: Allows editing hologram pages.
+    default: op
+  axohologram.line.edit:
+    description: Allows editing hologram lines.
+    default: op
+  axohologram.permission.edit:
+    description: Allows editing hologram permission requirements.
+    default: op
+  axohologram.npc.edit:
+    description: Allows linking holograms to FancyNPCs.
+    default: op
+  axohologram.npc.info:
+    description: Allows viewing FancyNPC link information.
+    default: op
+  axohologram.command.edit:
+    description: Allows editing hologram position, pages, style and general settings.
+    default: op
+  axohologram.command.line:
+    description: Allows editing hologram lines through canonical and alias commands.
+    default: op
+  axohologram.command.visibility:
+    description: Allows editing hologram visibility and visibility distance.
+    default: op
+  axohologram.command.npc:
+    description: Allows linking and unlinking holograms with NPCs.
+    default: op
+  axohologram.command.action:
+    description: Allows editing clickable hologram actions.
+    default: op

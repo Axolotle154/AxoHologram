@@ -1,0 +1,25 @@
+# ---------------------------------------------------------------- #
+#                  AxoHologram Configuration File                  #
+# ---------------------------------------------------------------- #
+
+general:
+  check-updates: true
+  view-distance: 48
+  visibility-check-interval: 20
+  defaults:
+    line-spacing: 0.25
+    billboard: "center"
+    create-default-line: true
+    create-default-line-format: "<white><id></white>"
+    create-default-item-material: "PAPER"
+    create-default-block-material: "STONE"
+
+placeholders:
+  refresh-interval: 20
+
+integrations:
+  placeholderapi: true
+  miniplaceholders: true
+  fancynpcs: true
+  fancynpcs-sync-interval: 10
+  fancynpcs-y-offset: 2.2

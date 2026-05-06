@@ -1,0 +1,178 @@
+# ---------------------------------------------------------------- #
+#                    AxoHologram Messages File                     #
+# ---------------------------------------------------------------- #
+# All messages support MiniMessage format.
+
+prefix: "<gradient:#00A4E4:#00FFAA><b>AxoHologram</b></gradient> <dark_gray>></dark_gray> "
+
+root-usage: "<prefix><gray>Usage: /holograma <subcommand> [arguments]</gray>"
+unknown-subcommand: "<prefix><red>Unknown subcommand.</red>"
+no-permission: "<prefix><red>You don't have permission to use this command.</red>"
+player-only: "<prefix><red>This command can only be executed by a player.</red>"
+reload-success: "<prefix><green>Plugin reloaded successfully.</green>"
+version-info: "<prefix><aqua>AxoHologram</aqua> <gray>version:</gray> <white><version></white>"
+hologram-not-found: "<prefix><red>Hologram '<hologram_id>' not found.</red>"
+invalid-hologram-id: "<prefix><red>Invalid hologram id '<hologram_id>'. Only letters, numbers, _ and - are allowed.</red>"
+world-unavailable: "<prefix><red>The hologram world '<world>' is not loaded.</red>"
+invalid-page-number: "<prefix><red>Invalid page number.</red>"
+invalid-line-number: "<prefix><red>Invalid line number.</red>"
+invalid-offset-number: "<prefix><red>Invalid offset number.</red>"
+invalid-location-number: "<prefix><red>Invalid coordinate, yaw or pitch value.</red>"
+invalid-rotation-number: "<prefix><red>Invalid rotation value.</red>"
+invalid-view-distance: "<prefix><red>View distance must be a positive number or 'default'.</red>"
+invalid-scale-number: "<prefix><red>Scale must be greater than 0.</red>"
+invalid-shadow-number: "<prefix><red>Shadow value must be 0 or greater.</red>"
+invalid-background-color: "<prefix><red>Invalid background color '<color>'. Use #RRGGBB, R,G,B, transparent/transparente or a supported color name.</red>"
+invalid-boolean-value: "<prefix><red>Invalid boolean value '<value>'. Use true or false.</red>"
+invalid-brightness-value: "<prefix><red>Brightness must be between 0 and 15.</red>"
+invalid-update-text-interval: "<prefix><red>Update text interval must be a positive number of ticks or 'default'.</red>"
+invalid-visibility-mode: "<prefix><red>Invalid visibility mode '<mode>'. Valid modes: all, manual, permission.</red>"
+invalid-billboard: "<prefix><red>Invalid billboard '<billboard>'. Valid values: center, fixed, vertical, horizontal.</red>"
+invalid-alignment: "<prefix><red>Invalid alignment '<alignment>'. Valid values: center, left, right.</red>"
+invalid-click-type: "<prefix><red>Invalid click type '<type>'. Valid values: left, right, any_click.</red>"
+invalid-action-type: "<prefix><red>Invalid action type '<type>'. Valid values: command, console_command, message, page, sound.</red>"
+invalid-action-value: "<prefix><red>Invalid action value '<value>'.</red>"
+invalid-action-id: "<prefix><red>Invalid action id.</red>"
+fancynpcs-unavailable: "<prefix><red>FancyNpcs is not installed or not enabled.</red>"
+npc-not-found: "<prefix><red>FancyNPC '<npc_name>' was not found.</red>"
+npc-link-usage: "<prefix><gray>Usage: /holograma npc link <hologram> <npc></gray>"
+npc-usage: "<prefix><gray>Usage: /holograma npc <link|unlink|info> ...</gray>"
+npc-unlink-usage: "<prefix><gray>Usage: /holograma npc unlink <hologram></gray>"
+npc-info-usage: "<prefix><gray>Usage: /holograma npc info <hologram></gray>"
+npc-link-success: "<prefix><green>Linked hologram '<hologram_id>' to FancyNPC '<npc_name>'.</green>"
+npc-unlink-success: "<prefix><green>Removed FancyNPC link from hologram '<hologram_id>'.</green>"
+npc-info-linked: "<prefix><aqua>Hologram '<hologram_id>' is linked to FancyNPC '<npc_name>'.</aqua>"
+npc-info-unlinked: "<prefix><gray>Hologram '<hologram_id>' is not linked to any FancyNPC.</gray>"
+npc-info-missing: "<prefix><yellow>The linked FancyNPC '<npc_name>' is currently missing.</yellow>"
+hologram-linked-npc-move-blocked: "<prefix><red>Hologram '<hologram_id>' is linked to FancyNPC '<npc_name>'. Unlink it before moving or rotating it manually.</red>"
+linkwithnpc-usage: "<prefix><gray>Usage: /holograma linkwithnpc <hologram> <npc></gray>"
+unlinkwithnpc-usage: "<prefix><gray>Usage: /holograma unlinkwithnpc <hologram></gray>"
+
+create-usage: "<prefix><gray>Usage: /holograma create <text|item|block> <id></gray>"
+create-success: "<prefix><green>Created <type> hologram '<hologram_id>' at your location.</green>"
+create-next-step-text: "<prefix><gray>Edit the first line: <white>/holograma line set <hologram_id> 1 1 texto_aqui</white></gray>"
+create-next-step-item: "<prefix><gray>Set the item material: <white>/holograma line set <hologram_id> 1 1 DIAMOND</white></gray>"
+create-next-step-block: "<prefix><gray>Set the block material: <white>/holograma line set <hologram_id> 1 1 GRASS_BLOCK</white></gray>"
+create-fail-exists: "<prefix><red>A hologram with the ID '<hologram_id>' already exists.</red>"
+
+delete-usage: "<prefix><gray>Usage: /holograma delete <id></gray>"
+delete-success: "<prefix><green>Hologram '<hologram_id>' has been deleted.</green>"
+
+move-usage: "<prefix><gray>Usage: /holograma movehere <id></gray>"
+move-success: "<prefix><green>Hologram '<hologram_id>' has been moved to your current location.</green>"
+
+moveto-usage: "<prefix><gray>Usage: /holograma moveto <id> <x> <y> <z> [yaw] [pitch]</gray>"
+moveto-success: "<prefix><green>Hologram '<hologram_id>' moved to <x>, <y>, <z>.</green>"
+
+position-usage: "<prefix><gray>Usage: /holograma position <id></gray>"
+position-info: "<prefix><aqua><hologram_id></aqua><gray> -> world: <white><world></white>, xyz: <white><x>, <y>, <z></white>, yaw/pitch: <white><yaw>/<pitch></white>, translation: <white><tx>, <ty>, <tz></white>.</gray>"
+
+center-usage: "<prefix><gray>Usage: /holograma center <id></gray>"
+center-success: "<prefix><green>Centered hologram '<hologram_id>' to x:<x> z:<z>.</green>"
+
+rotate-usage: "<prefix><gray>Usage: /holograma rotate <id> <degrees></gray>"
+rotate-success: "<prefix><green>Set horizontal rotation of '<hologram_id>' to <degrees> degrees.</green>"
+
+rotatepitch-usage: "<prefix><gray>Usage: /holograma rotatepitch <id> <degrees></gray>"
+rotatepitch-success: "<prefix><green>Set vertical rotation of '<hologram_id>' to <degrees> degrees.</green>"
+
+hologram-offset-usage: "<prefix><gray>Usage: /holograma offset <id> <x> <y> <z></gray>"
+hologram-offset-success: "<prefix><green>Set hologram offset for '<hologram_id>' to (x:<x>, y:<y>, z:<z>).</green>"
+translate-usage: "<prefix><gray>Usage: /holograma translate <id> <x> <y> <z></gray>"
+
+teleport-usage: "<prefix><gray>Usage: /holograma teleport <id></gray>"
+teleport-success: "<prefix><green>Teleported to hologram '<hologram_id>'.</green>"
+
+list-header: "<prefix><aqua>Available Holograms (<count>):</aqua>"
+list-entry: "<gray> - <white><hologram_id></white> at <aqua><location></aqua></gray>"
+list-empty: "<prefix><gray>There are no holograms to display.</gray>"
+
+page-usage: "<prefix><gray>Usage: /holograma page <add|delete|default> <id> [page_number]</gray>"
+page-add-success: "<prefix><green>Added a new page to hologram '<hologram_id>'.</green>"
+page-remove-usage: "<prefix><gray>Usage: /holograma page delete <id> <page_number></gray>"
+page-remove-last: "<prefix><red>You cannot remove the last page of a hologram.</red>"
+page-remove-success: "<prefix><green>Removed page <page_number> from hologram '<hologram_id>'.</green>"
+page-set-usage: "<prefix><gray>Usage: /holograma page default <id> <page_number></gray>"
+page-set-success: "<prefix><green>Set page <page_number> as the default page for hologram '<hologram_id>'.</green>"
+page-not-found: "<prefix><red>Page <page_number> not found in hologram '<hologram_id>'.</red>"
+
+line-usage: "<prefix><gray>Usage: /holograma line <add|delete|set|offset> <id> <page> ...</gray>"
+line-add-usage: "<prefix><gray>Usage: /holograma line add <id> <page> <type> <content></gray>"
+line-add-success: "<prefix><green>Added a new line to page <page_number> of hologram '<hologram_id>'.</green>"
+line-remove-usage: "<prefix><gray>Usage: /holograma line delete <id> <page> <line_number></gray>"
+line-remove-success: "<prefix><green>Removed line <line_number> from page <page_number> of hologram '<hologram_id>'.</green>"
+line-set-usage: "<prefix><gray>Usage: /holograma line set <id> <page> <line> <content></gray>"
+line-set-success: "<prefix><green>Set content for line <line_number> on page <page_number> of hologram '<hologram_id>'.</green>"
+line-not-found: "<prefix><red>Line <line_number> not found on page <page_number> of hologram '<hologram_id>'.</red>"
+invalid-line-type: "<prefix><red>Invalid line type '<type>'. Valid types: TEXT, ITEM, BLOCK.</red>"
+invalid-item-material: "<prefix><red>Invalid item material '<content>'.</red>"
+invalid-block-content: "<prefix><red>Invalid block content '<content>'. Use a block material or valid block data.</red>"
+line-set-invalid-content: "<prefix><red>Invalid line content '<content>'.</red>"
+
+addline-usage: "<prefix><gray>Usage: /holograma addline <id> <page> <type> <content></gray>"
+setline-usage: "<prefix><gray>Usage: /holograma setline <id> <page> <line> <content></gray>"
+removeline-usage: "<prefix><gray>Usage: /holograma removeline <id> <page> <line></gray>"
+insertbefore-usage: "<prefix><gray>Usage: /holograma insertbefore <id> <page> <line> <type> <content></gray>"
+insertafter-usage: "<prefix><gray>Usage: /holograma insertafter <id> <page> <line> <type> <content></gray>"
+insertbefore-success: "<prefix><green>Inserted a line before line <line_number> on page <page_number> of '<hologram_id>'.</green>"
+insertafter-success: "<prefix><green>Inserted a line after line <line_number> on page <page_number> of '<hologram_id>'.</green>"
+
+offset-usage: "<prefix><gray>Usage: /holograma line offset <id> <page> <line> <x> <y> <z></gray>"
+offset-success: "<prefix><green>Set offset for line <line_number> to (x:<x>, y:<y>, z:<z>).</green>"
+
+permission-usage: "<prefix><gray>Usage: /holograma permission <id> [permission]</gray>"
+permission-set: "<prefix><green>Hologram '<hologram_id>' now requires permission '<permission>'.</green>"
+permission-removed: "<prefix><green>Removed the custom permission requirement from hologram '<hologram_id>'. Visibility mode is now all.</green>"
+
+viewdistance-usage: "<prefix><gray>Usage: /holograma viewdistance <id> <distance></gray>"
+viewdistance-success: "<prefix><green>Set view distance of '<hologram_id>' to <distance> blocks.</green>"
+visibilitydistance-usage: "<prefix><gray>Usage: /holograma visibilitydistance <id> <distance></gray>"
+
+visibility-usage: "<prefix><gray>Usage: /holograma visibility <id> <all|manual|permission></gray>"
+visibility-success: "<prefix><green>Set visibility mode of '<hologram_id>' to <mode>.</green>"
+visibility-success-permission: "<prefix><green>Set visibility mode of '<hologram_id>' to <mode>. Effective permission: <permission>.</green>"
+
+scale-usage: "<prefix><gray>Usage: /holograma scale <id> <factor></gray>"
+scale-success: "<prefix><green>Set scale of '<hologram_id>' to <factor>.</green>"
+
+billboard-usage: "<prefix><gray>Usage: /holograma billboard <id> <center|fixed|vertical|horizontal></gray>"
+billboard-success: "<prefix><green>Set billboard mode of '<hologram_id>' to <billboard>.</green>"
+
+shadow-usage: "<prefix><gray>Usage: /holograma shadow <strength|radius> <id> <value></gray>"
+shadow-strength-success: "<prefix><green>Set shadow strength of '<hologram_id>' to <value>.</green>"
+shadow-radius-success: "<prefix><green>Set shadow radius of '<hologram_id>' to <value>.</green>"
+
+background-usage: "<prefix><gray>Usage: /holograma background <id> <color|transparent|transparente></gray>"
+background-success: "<prefix><green>Set text background of '<hologram_id>' to <color>.</green>"
+
+textshadow-usage: "<prefix><gray>Usage: /holograma textshadow <id> <true|false></gray>"
+textshadow-success: "<prefix><green>Set text shadow of '<hologram_id>' to <value>.</green>"
+
+seethrough-usage: "<prefix><gray>Usage: /holograma seethrough <id> <true|false></gray>"
+seethrough-success: "<prefix><green>Set see-through text mode of '<hologram_id>' to <value>.</green>"
+
+brightness-usage: "<prefix><gray>Usage: /holograma brightness <id> <block|sky> <0-15></gray>"
+brightness-success: "<prefix><green>Set <channel> brightness of '<hologram_id>' to <value>.</green>"
+
+align-usage: "<prefix><gray>Usage: /holograma align <id> <center|left|right></gray>"
+align-success: "<prefix><green>Set text alignment of '<hologram_id>' to <alignment>.</green>"
+textalignment-usage: "<prefix><gray>Usage: /holograma textalignment <id> <center|left|right></gray>"
+
+shadowstrength-usage: "<prefix><gray>Usage: /holograma shadowstrength <id> <value></gray>"
+shadowradius-usage: "<prefix><gray>Usage: /holograma shadowradius <id> <value></gray>"
+
+updatetextinterval-usage: "<prefix><gray>Usage: /holograma updatetextinterval <id> <ticks|default></gray>"
+updatetextinterval-success: "<prefix><green>Set text refresh interval of '<hologram_id>' to <interval>.</green>"
+
+action-usage: "<prefix><gray>Usage: /holograma action <add|remove|list> ...</gray>"
+action-add-usage: "<prefix><gray>Usage: /holograma action add <hologram> <left|right|any_click> <type> <value></gray>"
+action-remove-usage: "<prefix><gray>Usage: /holograma action remove <hologram> <left|right|any_click> <id></gray>"
+action-list-usage: "<prefix><gray>Usage: /holograma action list <hologram></gray>"
+action-add-success: "<prefix><green>Added <click> action '<type>' to '<hologram_id>' with value '<value>'.</green>"
+action-remove-success: "<prefix><green>Removed <click> action #<id> from '<hologram_id>'.</green>"
+action-not-found: "<prefix><red>Action #<id> for <click> click was not found on '<hologram_id>'.</red>"
+action-execution-failed: "<prefix><red>Failed to execute <type> action on '<hologram_id>': <value></red>"
+action-list-header: "<prefix><aqua>Actions for '<hologram_id>':</aqua>"
+action-list-branch: "<gray><click> click:</gray>"
+action-list-entry: "<gray> - <white>#<id></white> <aqua><type></aqua>: <white><value></white></gray>"
+action-list-empty: "<prefix><gray>Hologram '<hologram_id>' has no actions configured.</gray>"
