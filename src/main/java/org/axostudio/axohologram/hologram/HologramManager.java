@@ -10,6 +10,7 @@ import org.axostudio.axohologram.hologram.line.LineType;
 import org.axostudio.axohologram.hologram.line.impl.TextLineImpl;
 import org.axostudio.axohologram.hologram.page.HologramPage;
 import org.axostudio.axohologram.hologram.page.impl.AxoHologramPageImpl;
+import org.axostudio.axohologram.packet.HologramPacketManager;
 import org.axostudio.axohologram.util.SchedulerUtil;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
@@ -55,6 +56,7 @@ public class HologramManager {
         holograms.clear();
         activeHolograms.clear();
         plugin.getLogger().info("Loading holograms...");
+        createDefaultAnimationExampleIfMissing();
 
         File[] files = hologramFolder.listFiles((dir, name) -> name.toLowerCase().endsWith(".yml"));
         if (files == null || files.length == 0) {
@@ -181,8 +183,15 @@ public class HologramManager {
     }
 
     public void reload() {
+        stopTasks();
+        cancelTemporaryRemovalTasks();
+        HologramPacketManager.destroyAllTrackedEntities();
         destroyAllHolograms();
         loadHolograms();
+        plugin.getSchedulerUtil().runGlobalDelayed(task -> refreshOnlineViewers(), 1L);
+    }
+
+    private void refreshOnlineViewers() {
         for (Player player : Bukkit.getOnlinePlayers()) {
             for (Hologram hologram : holograms.values()) {
                 hologram.updateVisibility(player, true);
@@ -194,6 +203,7 @@ public class HologramManager {
         stopTasks();
         cancelTemporaryRemovalTasks();
         saveHolograms();
+        HologramPacketManager.destroyAllTrackedEntities();
         destroyAllHolograms();
     }
 
@@ -281,6 +291,10 @@ public class HologramManager {
             }
 
             for (Hologram hologram : holograms.values()) {
+                if (!hologram.isEnabled()) {
+                    continue;
+                }
+
                 World world = hologram.getLocation().getWorld();
                 if (world == null) {
                     continue;
@@ -345,6 +359,47 @@ public class HologramManager {
         }
 
         return interval == Long.MAX_VALUE ? -1L : interval;
+    }
+
+    private void createDefaultAnimationExampleIfMissing() {
+        File exampleFile = new File(hologramFolder, "animation_example.yml");
+        if (exampleFile.exists()) {
+            return;
+        }
+
+        if (Bukkit.getWorlds().isEmpty()) {
+            plugin.getLogger().warning("Could not create animation_example.yml because no worlds are loaded.");
+            return;
+        }
+
+        World world = Bukkit.getWorlds().get(0);
+        Location spawn = world.getSpawnLocation();
+        YamlConfiguration config = new YamlConfiguration();
+        config.set("enabled", false);
+        config.set("location.world", world.getName());
+        config.set("location.x", spawn.getX());
+        config.set("location.y", spawn.getY() + 2.0D);
+        config.set("location.z", spawn.getZ());
+        config.set("location.yaw", 0.0D);
+        config.set("location.pitch", 0.0D);
+        config.set("visibility.mode", "ALL");
+        config.set("display-animation-enabled", false);
+        config.set("display-animation", "cinematic_idle");
+        config.set("type", "TEXT");
+        config.set("text", List.of(
+                "&7AxoHologram animation example",
+                "<anim:rainbow>Rainbow text</anim:rainbow>",
+                "<anim:pulse_blue>Pulse blue</anim:pulse_blue>",
+                "<anim:wave_aqua>Wave aqua</anim:wave_aqua>",
+                "<anim:rainbow_cycle>Custom frame animation</anim:rainbow_cycle>"
+        ));
+
+        try {
+            config.save(exampleFile);
+            plugin.getLogger().info("Created disabled animation example hologram: animation_example.yml");
+        } catch (IOException exception) {
+            plugin.getLogger().log(Level.SEVERE, "Failed to create animation_example.yml", exception);
+        }
     }
 
     private void stopTasks() {

@@ -62,6 +62,10 @@ public final class AnimationTickEngine {
     }
 
     private boolean requiresAnimationTick(Hologram hologram) {
+        if (!hologram.isEnabled()) {
+            return false;
+        }
+
         String displayAnimation = animationManager.resolveDisplayAnimationName(hologram);
         if (displayAnimation != null && animationManager.hasDisplayAnimation(displayAnimation)) {
             return true;

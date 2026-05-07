@@ -55,6 +55,7 @@ public final class AnimationConfigManager {
         settings = readSettings(root.getConfigurationSection("settings"));
         loadTextAnimations(root.getConfigurationSection("text"));
         loadCustomAnimations(root.getConfigurationSection("custom"));
+        registerBuiltInTextAnimations();
         loadDisplayAnimations(root.getConfigurationSection("display"));
         loadPresets(root.getConfigurationSection("presets"));
         loadHologramAssignments(animationsConfig.getConfigurationSection("holograms"));
@@ -192,6 +193,51 @@ public final class AnimationConfigManager {
                 warnInvalid("custom", name, exception.getMessage());
             }
         }
+    }
+
+    private void registerBuiltInTextAnimations() {
+        textAnimations.putIfAbsent("rainbow", new ConfiguredTextAnimation(
+                "rainbow",
+                "rainbow",
+                1,
+                List.of(),
+                "&f",
+                "&f",
+                "&b"
+        ));
+        textAnimations.putIfAbsent("pulse_blue", new ConfiguredTextAnimation(
+                "pulse_blue",
+                "pulse",
+                2,
+                List.of("&b", "&f"),
+                "&f",
+                "&f",
+                "&b"
+        ));
+        textAnimations.putIfAbsent("matrix_green", new ConfiguredTextAnimation(
+                "matrix_green",
+                "matrix",
+                1,
+                List.of(),
+                "&a",
+                "&f",
+                "&b"
+        ));
+        textAnimations.putIfAbsent("wave_aqua", new ConfiguredTextAnimation(
+                "wave_aqua",
+                "wave",
+                2,
+                List.of(),
+                "&f",
+                "&f",
+                "&b&l"
+        ));
+        textAnimations.putIfAbsent("rainbow_cycle", new FrameTextAnimation(
+                "rainbow_cycle",
+                List.of("&c{text}", "&6{text}", "&e{text}", "&a{text}", "&b{text}", "&d{text}"),
+                2,
+                true
+        ));
     }
 
     private TextAnimation parseTextAnimation(String name, ConfigurationSection section) {

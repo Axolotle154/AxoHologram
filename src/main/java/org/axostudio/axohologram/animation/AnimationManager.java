@@ -66,6 +66,10 @@ public final class AnimationManager {
     }
 
     public String resolveDisplayAnimationName(Hologram hologram) {
+        if (!hologram.isDisplayAnimationEnabled()) {
+            return null;
+        }
+
         String directAnimation = hologram.getDisplayAnimation();
         if (directAnimation != null && !directAnimation.isBlank()) {
             return directAnimation;

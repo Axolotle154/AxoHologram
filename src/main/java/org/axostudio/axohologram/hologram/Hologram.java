@@ -20,6 +20,8 @@ public interface Hologram {
     String getWorldName();
     boolean isPersistent();
     void setPersistent(boolean persistent);
+    boolean isEnabled();
+    void setEnabled(boolean enabled);
 
     Location getLocation();
     void setLocation(Location location);
@@ -64,6 +66,8 @@ public interface Hologram {
     void setUpdateTextInterval(long updateTextInterval);
     String getDisplayAnimation();
     void setDisplayAnimation(String displayAnimation);
+    boolean isDisplayAnimationEnabled();
+    void setDisplayAnimationEnabled(boolean enabled);
     String getEffectivePermission();
     String getLinkedNpc();
     void setLinkedNpc(String linkedNpc);

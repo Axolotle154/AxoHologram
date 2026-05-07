@@ -14,7 +14,7 @@ public final class AnimationRenderer {
     public static final char PLACEHOLDER_PERCENT_MARKER = '\uE000';
 
     private static final Pattern TEXT_ANIMATION_PATTERN =
-            Pattern.compile("(?s)<#ANIM:([a-zA-Z0-9_-]+)>(.*?)</#ANIM>");
+            Pattern.compile("(?is)<\\s*#?(?:anim|animation)\\s*:\\s*([a-zA-Z0-9_-]+)\\s*>(.*?)<\\s*/\\s*#?(?:anim|animation)(?:\\s*:\\s*[a-zA-Z0-9_-]+)?\\s*>");
 
     private final AnimationConfigManager configManager;
     private final AnimationFrameCache frameCache;
@@ -93,6 +93,10 @@ public final class AnimationRenderer {
     }
 
     private String resolveDisplayAnimationName(Hologram hologram) {
+        if (!hologram.isDisplayAnimationEnabled()) {
+            return null;
+        }
+
         String directAnimation = hologram.getDisplayAnimation();
         if (directAnimation != null && !directAnimation.isBlank()) {
             return directAnimation;

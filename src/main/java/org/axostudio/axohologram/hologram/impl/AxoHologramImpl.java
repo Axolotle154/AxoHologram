@@ -50,6 +50,7 @@ public class AxoHologramImpl implements Hologram {
     private final Map<String, Component> staticLinesCache = new ConcurrentHashMap<>();
 
     private volatile boolean persistent;
+    private volatile boolean enabled;
     private volatile Location location;
     private volatile String worldName;
     private volatile Vector offset;
@@ -68,6 +69,7 @@ public class AxoHologramImpl implements Hologram {
     private volatile TextDisplay.TextAlignment alignment;
     private volatile long updateTextInterval;
     private volatile String displayAnimation;
+    private volatile boolean displayAnimationEnabled;
     private volatile int defaultPageIndex;
     private volatile String linkedNpc;
     private volatile long lastPeriodicRefreshTick;
@@ -77,6 +79,7 @@ public class AxoHologramImpl implements Hologram {
         this.location = location.clone();
         this.plugin = plugin;
         this.persistent = true;
+        this.enabled = true;
         this.worldName = location.getWorld() != null ? location.getWorld().getName() : null;
         this.offset = new Vector();
         this.permission = null;
@@ -93,7 +96,8 @@ public class AxoHologramImpl implements Hologram {
         this.seeThrough = false;
         this.alignment = TextDisplay.TextAlignment.CENTER;
         this.updateTextInterval = -1L;
-        this.displayAnimation = null;
+        this.displayAnimation = readDefaultDisplayAnimationName(plugin);
+        this.displayAnimationEnabled = readDefaultDisplayAnimationEnabled(plugin);
         this.defaultPageIndex = 0;
         this.lastPeriodicRefreshTick = Long.MIN_VALUE;
         this.pages.add(new AxoHologramPageImpl());
@@ -117,6 +121,20 @@ public class AxoHologramImpl implements Hologram {
     @Override
     public void setPersistent(boolean persistent) {
         this.persistent = persistent;
+    }
+
+    @Override
+    public boolean isEnabled() {
+        return enabled;
+    }
+
+    @Override
+    public void setEnabled(boolean enabled) {
+        this.enabled = enabled;
+        plugin.getHologramManager().saveHologram(this);
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            updateVisibility(player, true);
+        }
     }
 
     @Override
@@ -394,6 +412,19 @@ public class AxoHologramImpl implements Hologram {
     @Override
     public void setDisplayAnimation(String displayAnimation) {
         this.displayAnimation = normalizeAnimationName(displayAnimation);
+        this.displayAnimationEnabled = this.displayAnimation != null;
+        plugin.getHologramManager().saveHologram(this);
+        refreshViewers();
+    }
+
+    @Override
+    public boolean isDisplayAnimationEnabled() {
+        return displayAnimationEnabled;
+    }
+
+    @Override
+    public void setDisplayAnimationEnabled(boolean enabled) {
+        this.displayAnimationEnabled = enabled;
         plugin.getHologramManager().saveHologram(this);
         refreshViewers();
     }
@@ -617,6 +648,10 @@ public class AxoHologramImpl implements Hologram {
 
     @Override
     public boolean requiresPeriodicRefresh() {
+        if (!enabled) {
+            return false;
+        }
+
         for (HologramPage page : pages) {
             for (HologramLine line : page.getLines()) {
                 if (line instanceof TextLineImpl textLine && MiniMessageUtil.hasDynamicPlaceholders(textLine.getContent())) {
@@ -672,6 +707,10 @@ public class AxoHologramImpl implements Hologram {
             return false;
         }
 
+        if (!enabled) {
+            return false;
+        }
+
         if (!isPlayerInWorldAndRange(player)) {
             return false;
         }
@@ -691,6 +730,7 @@ public class AxoHologramImpl implements Hologram {
         Location currentLocation = location.clone();
         Vector currentOffset = offset.clone();
 
+        section.set("enabled", enabled ? null : false);
         section.set("location.world", worldName);
         section.set("location.x", currentLocation.getX());
         section.set("location.y", currentLocation.getY());
@@ -716,6 +756,7 @@ public class AxoHologramImpl implements Hologram {
         section.set("style.see-through", seeThrough);
         section.set("style.alignment", alignment.name());
         section.set("text.update-interval", updateTextInterval > 0L ? updateTextInterval : null);
+        section.set("display-animation-enabled", displayAnimationEnabled);
         section.set("display-animation", displayAnimation);
         section.set("default-page", defaultPageIndex + 1);
         section.set("linked-npc", linkedNpc);
@@ -774,6 +815,7 @@ public class AxoHologramImpl implements Hologram {
         );
 
         AxoHologramImpl hologram = new AxoHologramImpl(id, location, plugin);
+        hologram.enabled = section.getBoolean("enabled", true);
         hologram.worldName = worldName;
         hologram.permission = normalizePermission(section.getString("permission"));
         hologram.linkedNpc = normalizeLinkedNpc(section.getString("linked-npc", section.getString("linkedNpc")));
@@ -843,10 +885,28 @@ public class AxoHologramImpl implements Hologram {
         if (hologram.updateTextInterval <= 0L) {
             hologram.updateTextInterval = -1L;
         }
-        hologram.displayAnimation = normalizeAnimationName(readString(section,
+        String configuredDisplayAnimation = readString(section,
                 "display-animation",
                 "display.animation",
-                "animation.display"));
+                "animation.display");
+        boolean hasDisplayAnimation = configuredDisplayAnimation != null && !configuredDisplayAnimation.isBlank();
+        boolean hasDisplayAnimationEnabled = containsAny(section,
+                "display-animation-enabled",
+                "display.animation.enabled",
+                "animation.display-enabled");
+
+        if (hasDisplayAnimation) {
+            hologram.displayAnimation = normalizeAnimationName(configuredDisplayAnimation);
+        } else if (!hasDisplayAnimationEnabled) {
+            hologram.displayAnimation = null;
+        }
+
+        hologram.displayAnimationEnabled = hasDisplayAnimationEnabled
+                ? readBoolean(section, hologram.displayAnimationEnabled,
+                "display-animation-enabled",
+                "display.animation.enabled",
+                "animation.display-enabled")
+                : hologram.displayAnimationEnabled;
         deserializeActions(section, hologram, plugin);
 
         String background = section.contains("background")
@@ -1087,6 +1147,24 @@ public class AxoHologramImpl implements Hologram {
         return null;
     }
 
+    private static boolean readBoolean(ConfigurationSection section, boolean defaultValue, String... keys) {
+        for (String key : keys) {
+            if (section.contains(key)) {
+                return section.getBoolean(key, defaultValue);
+            }
+        }
+        return defaultValue;
+    }
+
+    private static boolean containsAny(ConfigurationSection section, String... keys) {
+        for (String key : keys) {
+            if (section.contains(key)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private void serializeActions(ConfigurationSection section) {
         if (actions.isEmpty()) {
             section.set("actions", null);
@@ -1247,6 +1325,17 @@ public class AxoHologramImpl implements Hologram {
 
     private static String normalizeLinkedNpc(String linkedNpc) {
         return linkedNpc == null || linkedNpc.isBlank() ? null : linkedNpc;
+    }
+
+    private static boolean readDefaultDisplayAnimationEnabled(AxoHologram plugin) {
+        return plugin.getConfigManager().getConfig()
+                .getBoolean("general.defaults.display-animation.enabled", false);
+    }
+
+    private static String readDefaultDisplayAnimationName(AxoHologram plugin) {
+        String configured = plugin.getConfigManager().getConfig()
+                .getString("general.defaults.display-animation.name", "cinematic_idle");
+        return normalizeAnimationName(configured);
     }
 
     private static String normalizeAnimationName(String animationName) {

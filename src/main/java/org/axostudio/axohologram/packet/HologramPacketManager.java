@@ -291,6 +291,25 @@ public final class HologramPacketManager {
         destroyMatchingLines(viewerId, hologramId, null, null);
     }
 
+    public static void destroyAllTrackedEntities() {
+        Set<UUID> entityIds = new HashSet<>(TRACKED_ENTITY_IDS);
+        for (Map<LineKey, UUID> trackedLines : PLAYER_LINE_ENTITIES.values()) {
+            entityIds.addAll(trackedLines.values());
+        }
+        for (Map<LineKey, UUID> trackedInteractions : PLAYER_LINE_INTERACTIONS.values()) {
+            entityIds.addAll(trackedInteractions.values());
+        }
+
+        PLAYER_LINE_ENTITIES.clear();
+        PLAYER_LINE_INTERACTIONS.clear();
+        TRACKED_ENTITY_IDS.clear();
+        TRACKED_DISPLAYS.clear();
+
+        for (UUID entityId : entityIds) {
+            removeEntityFromWorld(entityId);
+        }
+    }
+
     public static void destroyOtherPages(Player player, String hologramId, int visiblePageIndex) {
         if (player == null) {
             return;
@@ -656,10 +675,22 @@ public final class HologramPacketManager {
     private static void removeEntity(UUID entityId) {
         TRACKED_ENTITY_IDS.remove(entityId);
         TRACKED_DISPLAYS.remove(entityId);
+        removeEntityFromWorld(entityId);
+    }
+
+    private static void removeEntityFromWorld(UUID entityId) {
         Entity entity = Bukkit.getEntity(entityId);
-        if (entity != null) {
-            scheduler().runAtEntity(entity, entity::remove);
+        if (entity == null) {
+            return;
         }
+
+        AxoHologram plugin = AxoHologram.getInstance();
+        if (plugin != null && !plugin.getSchedulerUtil().isFolia() && Bukkit.isPrimaryThread()) {
+            entity.remove();
+            return;
+        }
+
+        scheduler().runAtEntity(entity, entity::remove);
     }
 
     private static org.axostudio.axohologram.util.SchedulerUtil scheduler() {

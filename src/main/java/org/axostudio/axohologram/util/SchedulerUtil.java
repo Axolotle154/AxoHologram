@@ -16,6 +16,9 @@ public final class SchedulerUtil {
         void cancel();
     }
 
+    private static final TaskHandle NOOP_TASK = () -> {
+    };
+
     private final Plugin plugin;
     private final boolean isFolia;
 
@@ -25,6 +28,11 @@ public final class SchedulerUtil {
     }
 
     public void run(Runnable runnable) {
+        if (!plugin.isEnabled()) {
+            runImmediatelyIfSafe(runnable);
+            return;
+        }
+
         if (isFolia) {
             plugin.getServer().getGlobalRegionScheduler().execute(plugin, runnable);
         } else {
@@ -33,6 +41,13 @@ public final class SchedulerUtil {
     }
 
     public void runLater(Runnable runnable, long delayTicks) {
+        if (!plugin.isEnabled()) {
+            if (delayTicks <= 0L) {
+                runImmediatelyIfSafe(runnable);
+            }
+            return;
+        }
+
         if (isFolia) {
             plugin.getServer().getGlobalRegionScheduler().runDelayed(plugin, task -> runnable.run(), delayTicks);
         } else {
@@ -41,6 +56,10 @@ public final class SchedulerUtil {
     }
 
     public BukkitTask runTimer(Runnable runnable, long delayTicks, long periodTicks) {
+        if (!plugin.isEnabled()) {
+            return null;
+        }
+
         if (isFolia) {
             plugin.getServer().getGlobalRegionScheduler().runAtFixedRate(plugin, task -> runnable.run(), delayTicks, periodTicks);
             return null; // Folia's ScheduledTask is not a BukkitTask
@@ -50,6 +69,11 @@ public final class SchedulerUtil {
     }
 
     public void runGlobal(Runnable runnable) {
+        if (!plugin.isEnabled()) {
+            runImmediatelyIfSafe(runnable);
+            return;
+        }
+
         if (isFolia) {
             plugin.getServer().getGlobalRegionScheduler().execute(plugin, runnable);
         } else {
@@ -58,6 +82,13 @@ public final class SchedulerUtil {
     }
 
     public TaskHandle runGlobalDelayed(Consumer<ScheduledTask> task, long delayTicks) {
+        if (!plugin.isEnabled()) {
+            if (delayTicks <= 0L) {
+                runImmediatelyIfSafe(() -> task.accept(null));
+            }
+            return NOOP_TASK;
+        }
+
         if (isFolia) {
             ScheduledTask scheduledTask = plugin.getServer().getGlobalRegionScheduler().runDelayed(plugin, task, delayTicks);
             return scheduledTask::cancel;
@@ -67,6 +98,10 @@ public final class SchedulerUtil {
     }
 
     public TaskHandle runGlobalAtFixedRate(Consumer<ScheduledTask> task, long initialDelayTicks, long periodTicks) {
+        if (!plugin.isEnabled()) {
+            return NOOP_TASK;
+        }
+
         if (isFolia) {
             ScheduledTask scheduledTask = plugin.getServer().getGlobalRegionScheduler().runAtFixedRate(plugin, task, initialDelayTicks, periodTicks);
             return scheduledTask::cancel;
@@ -77,6 +112,17 @@ public final class SchedulerUtil {
 
     public void runAtLocation(Location location, Runnable runnable) {
         if (location == null || location.getWorld() == null) {
+            return;
+        }
+
+        if (!plugin.isEnabled()) {
+            if (!isFolia) {
+                runImmediatelyIfSafe(runnable);
+                return;
+            }
+            if (Bukkit.isOwnedByCurrentRegion(location)) {
+                runnable.run();
+            }
             return;
         }
 
@@ -93,6 +139,17 @@ public final class SchedulerUtil {
 
     public boolean runAtEntity(Entity entity, Runnable runnable) {
         if (entity == null || !entity.isValid()) {
+            return false;
+        }
+
+        if (!plugin.isEnabled()) {
+            if (!isFolia) {
+                return runImmediatelyIfSafe(runnable);
+            }
+            if (Bukkit.isOwnedByCurrentRegion(entity)) {
+                runnable.run();
+                return true;
+            }
             return false;
         }
 
@@ -113,6 +170,13 @@ public final class SchedulerUtil {
             return false;
         }
 
+        if (!plugin.isEnabled()) {
+            if (delayTicks <= 0L) {
+                return runAtEntity(entity, runnable);
+            }
+            return false;
+        }
+
         if (isFolia) {
             return entity.getScheduler().runDelayed(plugin, task -> runnable.run(), null, delayTicks) != null;
         } else {
@@ -128,5 +192,13 @@ public final class SchedulerUtil {
         } catch (ClassNotFoundException e) {
             return false;
         }
+    }
+
+    private boolean runImmediatelyIfSafe(Runnable runnable) {
+        if (Bukkit.isPrimaryThread()) {
+            runnable.run();
+            return true;
+        }
+        return false;
     }
 }

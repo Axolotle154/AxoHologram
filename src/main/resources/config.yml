@@ -13,6 +13,9 @@ general:
     create-default-line-format: "<white><id></white>"
     create-default-item-material: "PAPER"
     create-default-block-material: "STONE"
+    display-animation:
+      enabled: false
+      name: "cinematic_idle"
 
 placeholders:
   refresh-interval: 20

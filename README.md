@@ -191,6 +191,7 @@ Soporta:
 - HEX `&#RRGGBB`
 - HEX estilo Bungee `&x&F&F&0&0&F&F`
 - Animaciones con `<#ANIM:nombre>texto</#ANIM>`
+- Animaciones con `<anim:nombre>texto</anim:nombre>`
 
 Ejemplos:
 
@@ -201,6 +202,7 @@ Ejemplos:
 &x&9&D&0&0&F&FTexto
 <#ANIM:rainbow>Hello</#ANIM>
 <#ANIM:pulse_blue>Store</#ANIM>
+<anim:wave_aqua>Coins</anim:wave_aqua>
 ```
 
 ## Animaciones
@@ -228,11 +230,31 @@ holograms:
     display-animation: cinematic_idle
 ```
 
+Los hologramas tambien pueden activar o desactivar su animacion display:
+
+```yaml
+display-animation-enabled: false
+display-animation: cinematic_idle
+```
+
+Para activar esa animacion en un holograma concreto, cambia `display-animation-enabled` a `true`. Para hologramas nuevos, el default vive en `config.yml`:
+
+```yaml
+general:
+  defaults:
+    display-animation:
+      enabled: false
+      name: cinematic_idle
+```
+
 Ejemplo de animacion de texto:
 
 ```text
 <#ANIM:wave_aqua>Coins</#ANIM>
+<anim:pulse_blue>Store</anim:pulse_blue>
 ```
+
+El plugin tambien crea `plugins/AxoHologram/holograms/animation_example.yml` si no existe. Ese holograma queda con `enabled: false` por defecto para usarlo como plantilla; cambia a `enabled: true` y recarga el plugin para verlo.
 
 ## Integraciones opcionales
 
