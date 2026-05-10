@@ -6,7 +6,7 @@ import org.bukkit.Bukkit;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
-import java.net.URL;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.function.Consumer;
 
@@ -26,7 +26,7 @@ public final class UpdateChecker {
     public void getVersion(final Consumer<String> consumer) {
         Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
             try {
-                HttpURLConnection connection = (HttpURLConnection) new URL(SPIGOT_API_URL).openConnection();
+                HttpURLConnection connection = (HttpURLConnection) URI.create(SPIGOT_API_URL).toURL().openConnection();
                 connection.setRequestMethod("GET");
                 connection.setRequestProperty("User-Agent", "AxoHologram-UpdateChecker");
                 connection.setConnectTimeout(CONNECT_TIMEOUT_MS);

@@ -245,7 +245,7 @@ public final class AxoHologram extends JavaPlugin {
         }
 
         updateChecker.getVersion(latestVersion -> {
-            String currentVersion = getDescription().getVersion();
+            String currentVersion = getPluginMeta().getVersion();
             if (currentVersion.equalsIgnoreCase(latestVersion)) {
                 getLogger().info("You are running the latest version: " + currentVersion);
             } else {
@@ -256,7 +256,7 @@ public final class AxoHologram extends JavaPlugin {
     }
 
     private void logStartupBanner() {
-        String version = getDescription().getVersion();
+        String version = getPluginMeta().getVersion();
         String banner = """
                  _____                   ___ ___        .__
                 /  _  \\ ___  _______    /   |   \\  ____ |  |   ____   ________________    _____
