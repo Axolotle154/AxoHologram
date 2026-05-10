@@ -87,6 +87,13 @@ list-header: "<prefix><aqua>Available Holograms (<count>):</aqua>"
 list-entry: "<gray> - <white><hologram_id></white> at <aqua><location></aqua></gray>"
 list-empty: "<prefix><gray>There are no holograms to display.</gray>"
 
+import-usage: "<prefix><gray>Usage: /holograma import <auto|fancy|decent> [name|all]</gray>"
+import-source-not-found: "<prefix><red>Unknown importer '<source>'. Use fancy, decent or auto.</red>"
+import-source-unavailable: "<prefix><red><source> YAML data was not found.</red>"
+import-summary: "<prefix><green>Import completed.</green> <gray>Source: <white><source></white>, attempted: <white><attempted></white>, imported: <green><imported></green>, skipped: <yellow><skipped></yellow>, failed: <red><failed></red>.</gray>"
+import-message-entry: "<prefix><gray><message></gray>"
+import-message-more: "<prefix><gray>... and <count> more import messages in console.</gray>"
+
 page-usage: "<prefix><gray>Usage: /holograma page <add|delete|default> <id> [page_number]</gray>"
 page-add-success: "<prefix><green>Added a new page to hologram '<hologram_id>'.</green>"
 page-remove-usage: "<prefix><gray>Usage: /holograma page delete <id> <page_number></gray>"
@@ -96,7 +103,7 @@ page-set-usage: "<prefix><gray>Usage: /holograma page default <id> <page_number>
 page-set-success: "<prefix><green>Set page <page_number> as the default page for hologram '<hologram_id>'.</green>"
 page-not-found: "<prefix><red>Page <page_number> not found in hologram '<hologram_id>'.</red>"
 
-line-usage: "<prefix><gray>Usage: /holograma line <add|delete|set|offset> <id> <page> ...</gray>"
+line-usage: "<prefix><gray>Usage: /holograma line <add|delete|set|offset|height> <id> <page> ...</gray>"
 line-add-usage: "<prefix><gray>Usage: /holograma line add <id> <page> <type> <content></gray>"
 line-add-success: "<prefix><green>Added a new line to page <page_number> of hologram '<hologram_id>'.</green>"
 line-remove-usage: "<prefix><gray>Usage: /holograma line delete <id> <page> <line_number></gray>"
@@ -119,6 +126,9 @@ insertafter-success: "<prefix><green>Inserted a line after line <line_number> on
 
 offset-usage: "<prefix><gray>Usage: /holograma line offset <id> <page> <line> <x> <y> <z></gray>"
 offset-success: "<prefix><green>Set offset for line <line_number> to (x:<x>, y:<y>, z:<z>).</green>"
+line-height-usage: "<prefix><gray>Usage: /holograma line height <id> <page> <line> <height|default></gray>"
+line-height-success: "<prefix><green>Set height for line <line_number> to <height>.</green>"
+invalid-line-height-number: "<prefix><red>Line height must be 0 or greater.</red>"
 
 permission-usage: "<prefix><gray>Usage: /holograma permission <id> [permission]</gray>"
 permission-set: "<prefix><green>Hologram '<hologram_id>' now requires permission '<permission>'.</green>"

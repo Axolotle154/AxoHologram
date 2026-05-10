@@ -31,6 +31,7 @@ permissions:
       axohologram.edit: true
       axohologram.reload: true
       axohologram.list: true
+      axohologram.import: true
       axohologram.teleport: true
       axohologram.hologram.move: true
       axohologram.hologram.visibility: true
@@ -59,6 +60,9 @@ permissions:
     default: op
   axohologram.list:
     description: Allows listing holograms.
+    default: op
+  axohologram.import:
+    description: Allows importing holograms from supported plugins.
     default: op
   axohologram.teleport:
     description: Allows teleporting to holograms.

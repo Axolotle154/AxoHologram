@@ -24,6 +24,7 @@ import org.joml.Vector3f;
 
 import java.util.HashSet;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -32,6 +33,7 @@ public final class HologramPacketManager {
 
     private static final Map<UUID, Map<LineKey, UUID>> PLAYER_LINE_ENTITIES = new ConcurrentHashMap<>();
     private static final Map<UUID, Map<LineKey, UUID>> PLAYER_LINE_INTERACTIONS = new ConcurrentHashMap<>();
+    private static final Map<UUID, Map<LineKey, TextLineState>> PLAYER_LINE_TEXTS = new ConcurrentHashMap<>();
     private static final Map<UUID, TrackedDisplay> TRACKED_DISPLAYS = new ConcurrentHashMap<>();
     private static final Set<UUID> TRACKED_ENTITY_IDS = ConcurrentHashMap.newKeySet();
     private static final PlainTextComponentSerializer PLAIN_TEXT = PlainTextComponentSerializer.plainText();
@@ -40,6 +42,12 @@ public final class HologramPacketManager {
     }
 
     private record LineKey(String hologramId, int pageIndex, int lineIndex) {
+    }
+
+    private record TextLineState(Component text, float scale, float interactionWidth, float interactionHeight) {
+    }
+
+    private record InteractionSize(float width, float height) {
     }
 
     public record TrackedDisplay(UUID viewerId, String hologramId, int pageIndex, int lineIndex) {
@@ -57,6 +65,9 @@ public final class HologramPacketManager {
             return;
         }
 
+        Component displayText = normalizeText(text);
+        LineKey key = new LineKey(hologram.getId(), pageIndex, lineIndex);
+        TextLineState textState = createTextLineState(displayText, hologram);
         Location spawnLocation = location.clone();
         destroyLine(viewerId, hologram.getId(), pageIndex, lineIndex);
         scheduler().runAtLocation(spawnLocation, () -> {
@@ -67,13 +78,16 @@ public final class HologramPacketManager {
             TextDisplay display = spawnLocation.getWorld().spawn(spawnLocation, TextDisplay.class, entity -> {
                 configureDisplay(entity, hologram, spawnLocation, billboard);
                 applyTextStyle(entity, hologram);
-                entity.text(text);
+                entity.text(displayText);
             });
 
-            trackLine(viewerId, hologram.getId(), pageIndex, lineIndex, display);
+            if (!trackLine(viewerId, hologram.getId(), pageIndex, lineIndex, display)) {
+                return;
+            }
+            playerTexts(viewerId).put(key, textState);
             syncInteraction(viewerId, hologram, pageIndex, lineIndex, spawnLocation,
-                    resolveTextInteractionWidth(text, hologram),
-                    resolveTextInteractionHeight(text, hologram));
+                    textState.interactionWidth(),
+                    textState.interactionHeight());
         });
     }
 
@@ -98,14 +112,26 @@ public final class HologramPacketManager {
             return;
         }
 
+        Component displayText = normalizeText(text);
+        TextLineState previousTextState = getTextLineState(viewerId, key);
+        boolean textChanged = previousTextState == null || !Objects.equals(previousTextState.text(), displayText);
+        boolean scaleChanged = previousTextState == null || Float.compare(previousTextState.scale(), resolveTextInteractionScale(hologram)) != 0;
+        TextLineState textState = textChanged || scaleChanged
+                ? createTextLineState(displayText, hologram)
+                : previousTextState;
         Location targetLocation = location.clone();
         if (!scheduler().runAtEntity(display, () -> {
             updateDisplay(display, hologram, targetLocation, billboard);
             applyTextStyle(display, hologram);
-            display.text(text);
+            if (textChanged) {
+                display.text(displayText);
+            }
+            if (textChanged || scaleChanged) {
+                playerTexts(viewerId).put(key, textState);
+            }
             syncInteraction(viewerId, hologram, pageIndex, lineIndex, targetLocation,
-                    resolveTextInteractionWidth(text, hologram),
-                    resolveTextInteractionHeight(text, hologram));
+                    textState.interactionWidth(),
+                    textState.interactionHeight());
         })) {
             destroyLine(viewerId, hologram.getId(), pageIndex, lineIndex);
             spawnTextLine(viewerId, hologram, pageIndex, lineIndex, location, text, billboard);
@@ -244,6 +270,48 @@ public final class HologramPacketManager {
         }
     }
 
+    public static boolean updateLineDisplayState(Player player, Hologram hologram, int pageIndex, int lineIndex, Location location, Billboard billboard) {
+        if (player == null) {
+            return false;
+        }
+        return updateLineDisplayState(player.getUniqueId(), hologram, pageIndex, lineIndex, location, billboard);
+    }
+
+    public static boolean updateLineDisplayState(UUID viewerId, Hologram hologram, int pageIndex, int lineIndex, Location location, Billboard billboard) {
+        if (viewerId == null || hologram == null || location == null || location.getWorld() == null) {
+            return false;
+        }
+
+        Map<LineKey, UUID> lines = PLAYER_LINE_ENTITIES.get(viewerId);
+        if (lines == null) {
+            return false;
+        }
+
+        LineKey key = new LineKey(hologram.getId(), pageIndex, lineIndex);
+        UUID entityId = lines.get(key);
+        if (entityId == null) {
+            return false;
+        }
+
+        if (!(Bukkit.getEntity(entityId) instanceof Display display) || !display.isValid()) {
+            destroyLine(viewerId, hologram.getId(), pageIndex, lineIndex);
+            return false;
+        }
+
+        Location targetLocation = location.clone();
+        InteractionSize interactionSize = resolveExistingInteractionSize(viewerId, key, display, hologram);
+        if (!scheduler().runAtEntity(display, () -> {
+            updateDisplay(display, hologram, targetLocation, billboard);
+            syncInteraction(viewerId, hologram, pageIndex, lineIndex, targetLocation,
+                    interactionSize.width(),
+                    interactionSize.height());
+        })) {
+            destroyLine(viewerId, hologram.getId(), pageIndex, lineIndex);
+            return false;
+        }
+        return true;
+    }
+
     public static void destroyLine(Player player, String hologramId, int pageIndex, int lineIndex) {
         if (player == null) {
             return;
@@ -255,6 +323,7 @@ public final class HologramPacketManager {
         LineKey key = new LineKey(hologramId, pageIndex, lineIndex);
         removeTrackedLineEntity(playerLines(viewerId), key);
         removeTrackedLineEntity(playerInteractions(viewerId), key);
+        removeTextLineState(viewerId, key);
     }
 
     public static void destroyAllHologramLinesForPlayer(Player player) {
@@ -278,6 +347,7 @@ public final class HologramPacketManager {
                 removeEntity(entityId);
             }
         }
+        PLAYER_LINE_TEXTS.remove(viewerId);
     }
 
     public static void destroyAllHologramLines(Player player, String hologramId) {
@@ -302,6 +372,7 @@ public final class HologramPacketManager {
 
         PLAYER_LINE_ENTITIES.clear();
         PLAYER_LINE_INTERACTIONS.clear();
+        PLAYER_LINE_TEXTS.clear();
         TRACKED_ENTITY_IDS.clear();
         TRACKED_DISPLAYS.clear();
 
@@ -320,14 +391,17 @@ public final class HologramPacketManager {
     public static void destroyOtherPages(UUID viewerId, String hologramId, int visiblePageIndex) {
         Map<LineKey, UUID> lines = PLAYER_LINE_ENTITIES.get(viewerId);
         Map<LineKey, UUID> interactions = PLAYER_LINE_INTERACTIONS.get(viewerId);
+        Map<LineKey, TextLineState> texts = PLAYER_LINE_TEXTS.get(viewerId);
         boolean noLines = lines == null || lines.isEmpty();
         boolean noInteractions = interactions == null || interactions.isEmpty();
-        if (noLines && noInteractions) {
+        boolean noTexts = texts == null || texts.isEmpty();
+        if (noLines && noInteractions && noTexts) {
             return;
         }
 
         destroyOtherPages(lines, hologramId, visiblePageIndex);
         destroyOtherPages(interactions, hologramId, visiblePageIndex);
+        destroyOtherPageTextStates(viewerId, texts, hologramId, visiblePageIndex);
     }
 
     public static void destroyLinesExcept(Player player, String hologramId, int pageIndex, Set<Integer> keepLines) {
@@ -346,6 +420,7 @@ public final class HologramPacketManager {
         Map<LineKey, UUID> interactions = PLAYER_LINE_INTERACTIONS.get(viewerId);
         destroyMatchingLines(lines, hologramId, pageIndex, keepLines);
         destroyMatchingLines(interactions, hologramId, pageIndex, keepLines);
+        destroyMatchingTextStates(viewerId, hologramId, pageIndex, keepLines);
     }
 
     private static void destroyMatchingLines(Map<LineKey, UUID> trackedEntities, String hologramId, Integer pageIndex, Set<Integer> keepLines) {
@@ -367,6 +442,29 @@ public final class HologramPacketManager {
         }
     }
 
+    private static void destroyMatchingTextStates(UUID viewerId, String hologramId, Integer pageIndex, Set<Integer> keepLines) {
+        Map<LineKey, TextLineState> texts = PLAYER_LINE_TEXTS.get(viewerId);
+        if (texts == null || texts.isEmpty()) {
+            return;
+        }
+
+        for (LineKey key : new HashSet<>(texts.keySet())) {
+            boolean sameHologram = key.hologramId().equals(hologramId);
+            boolean samePage = pageIndex == null || key.pageIndex() == pageIndex;
+            boolean shouldKeep = keepLines != null && pageIndex != null && key.pageIndex() == pageIndex && keepLines.contains(key.lineIndex());
+            boolean shouldDestroy = sameHologram && samePage && !shouldKeep;
+            boolean shouldDestroyOtherPage = keepLines != null && pageIndex != null && sameHologram && key.pageIndex() != pageIndex;
+
+            if (shouldDestroy || shouldDestroyOtherPage) {
+                texts.remove(key);
+            }
+        }
+
+        if (texts.isEmpty()) {
+            PLAYER_LINE_TEXTS.remove(viewerId, texts);
+        }
+    }
+
     private static Map<LineKey, UUID> playerLines(UUID viewerId) {
         return PLAYER_LINE_ENTITIES.computeIfAbsent(viewerId, ignored -> new ConcurrentHashMap<>());
     }
@@ -375,17 +473,40 @@ public final class HologramPacketManager {
         return PLAYER_LINE_INTERACTIONS.computeIfAbsent(viewerId, ignored -> new ConcurrentHashMap<>());
     }
 
-    private static void trackLine(UUID viewerId, String hologramId, int pageIndex, int lineIndex, Display display) {
+    private static Map<LineKey, TextLineState> playerTexts(UUID viewerId) {
+        return PLAYER_LINE_TEXTS.computeIfAbsent(viewerId, ignored -> new ConcurrentHashMap<>());
+    }
+
+    private static TextLineState getTextLineState(UUID viewerId, LineKey key) {
+        Map<LineKey, TextLineState> texts = PLAYER_LINE_TEXTS.get(viewerId);
+        return texts == null ? null : texts.get(key);
+    }
+
+    private static void removeTextLineState(UUID viewerId, LineKey key) {
+        Map<LineKey, TextLineState> texts = PLAYER_LINE_TEXTS.get(viewerId);
+        if (texts == null) {
+            return;
+        }
+
+        texts.remove(key);
+        if (texts.isEmpty()) {
+            PLAYER_LINE_TEXTS.remove(viewerId, texts);
+        }
+    }
+
+    private static boolean trackLine(UUID viewerId, String hologramId, int pageIndex, int lineIndex, Display display) {
         Player player = Bukkit.getPlayer(viewerId);
         if (player == null || !player.isOnline()) {
             display.remove();
-            return;
+            return false;
         }
 
         TRACKED_ENTITY_IDS.add(display.getUniqueId());
         TRACKED_DISPLAYS.put(display.getUniqueId(), new TrackedDisplay(viewerId, hologramId, pageIndex, lineIndex));
-        playerLines(viewerId).put(new LineKey(hologramId, pageIndex, lineIndex), display.getUniqueId());
+        UUID previousEntityId = playerLines(viewerId).put(new LineKey(hologramId, pageIndex, lineIndex), display.getUniqueId());
+        removeReplacedEntity(previousEntityId, display.getUniqueId());
         showEntity(viewerId, display.getUniqueId());
+        return true;
     }
 
     private static void trackInteraction(UUID viewerId, String hologramId, int pageIndex, int lineIndex, Interaction interaction) {
@@ -397,8 +518,15 @@ public final class HologramPacketManager {
 
         TRACKED_ENTITY_IDS.add(interaction.getUniqueId());
         TRACKED_DISPLAYS.put(interaction.getUniqueId(), new TrackedDisplay(viewerId, hologramId, pageIndex, lineIndex));
-        playerInteractions(viewerId).put(new LineKey(hologramId, pageIndex, lineIndex), interaction.getUniqueId());
+        UUID previousEntityId = playerInteractions(viewerId).put(new LineKey(hologramId, pageIndex, lineIndex), interaction.getUniqueId());
+        removeReplacedEntity(previousEntityId, interaction.getUniqueId());
         showEntity(viewerId, interaction.getUniqueId());
+    }
+
+    private static void removeReplacedEntity(UUID previousEntityId, UUID currentEntityId) {
+        if (previousEntityId != null && !previousEntityId.equals(currentEntityId)) {
+            removeEntity(previousEntityId);
+        }
     }
 
     public static TrackedDisplay getTrackedDisplay(UUID entityId) {
@@ -569,26 +697,56 @@ public final class HologramPacketManager {
         return (float) AxoHologram.getInstance().getConfigManager().getConfig().getDouble("general.view-distance", 48.0D);
     }
 
-    private static float resolveTextInteractionWidth(Component text, Hologram hologram) {
-        String plainText = PLAIN_TEXT.serialize(text);
+    private static InteractionSize resolveTextInteractionSize(Component text, Hologram hologram) {
+        String plainText = PLAIN_TEXT.serialize(normalizeText(text));
         int maxLineLength = 1;
-        for (String line : plainText.split("\\R", -1)) {
+        String[] lines = plainText.split("\\R", -1);
+        for (String line : lines) {
             maxLineLength = Math.max(maxLineLength, line.length());
         }
 
-        float scale = Math.max(0.5F, hologram.getScale());
-        return Math.max(0.6F, (maxLineLength * 0.12F + 0.35F) * scale);
+        int lineCount = Math.max(1, lines.length);
+        float scale = resolveTextInteractionScale(hologram);
+        float width = Math.max(0.6F, (maxLineLength * 0.12F + 0.35F) * scale);
+        float height = Math.max(0.35F, (0.30F + (Math.max(0, lineCount - 1) * 0.25F)) * scale);
+        return new InteractionSize(width, height);
     }
 
-    private static float resolveTextInteractionHeight(Component text, Hologram hologram) {
-        String plainText = PLAIN_TEXT.serialize(text);
-        int lineCount = Math.max(1, plainText.split("\\R", -1).length);
-        float scale = Math.max(0.5F, hologram.getScale());
-        return Math.max(0.35F, (0.30F + (Math.max(0, lineCount - 1) * 0.25F)) * scale);
+    private static TextLineState createTextLineState(Component text, Hologram hologram) {
+        InteractionSize interactionSize = resolveTextInteractionSize(text, hologram);
+        return new TextLineState(
+                normalizeText(text),
+                resolveTextInteractionScale(hologram),
+                interactionSize.width(),
+                interactionSize.height()
+        );
+    }
+
+    private static float resolveTextInteractionScale(Hologram hologram) {
+        return Math.max(0.5F, hologram.getScale());
+    }
+
+    private static Component normalizeText(Component text) {
+        return text == null ? Component.empty() : text;
     }
 
     private static float resolveDisplayInteractionSize(Hologram hologram) {
         return Math.max(0.75F, hologram.getScale());
+    }
+
+    private static InteractionSize resolveExistingInteractionSize(UUID viewerId, LineKey key, Display display, Hologram hologram) {
+        if (display instanceof TextDisplay textDisplay) {
+            TextLineState textState = getTextLineState(viewerId, key);
+            if (textState != null) {
+                return new InteractionSize(textState.interactionWidth(), textState.interactionHeight());
+            }
+
+            Component text = textDisplay.text();
+            return resolveTextInteractionSize(text, hologram);
+        }
+
+        float interactionSize = resolveDisplayInteractionSize(hologram);
+        return new InteractionSize(interactionSize, interactionSize);
     }
 
     private static Location resolveInteractionLocation(Location location, float height) {
@@ -600,11 +758,15 @@ public final class HologramPacketManager {
     }
 
     private static Transformation buildTransformation(Hologram hologram, float scaleMultiplier, float rollOffset) {
-        float scale = hologram.getScale() * Math.max(0.01F, scaleMultiplier);
+        float multiplier = Math.max(0.01F, scaleMultiplier);
         return new Transformation(
                 new Vector3f(0.0F, 0.0F, 0.0F),
                 new Quaternionf().rotateZ((float) Math.toRadians(rollOffset)),
-                new Vector3f(scale, scale, scale),
+                new Vector3f(
+                        hologram.getScaleX() * multiplier,
+                        hologram.getScaleY() * multiplier,
+                        hologram.getScaleZ() * multiplier
+                ),
                 new Quaternionf()
         );
     }
@@ -658,6 +820,24 @@ public final class HologramPacketManager {
             }
 
             removeTrackedLineEntity(trackedEntities, key);
+        }
+    }
+
+    private static void destroyOtherPageTextStates(UUID viewerId, Map<LineKey, TextLineState> texts, String hologramId, int visiblePageIndex) {
+        if (texts == null || texts.isEmpty()) {
+            return;
+        }
+
+        for (LineKey key : new HashSet<>(texts.keySet())) {
+            if (!key.hologramId().equals(hologramId) || key.pageIndex() == visiblePageIndex) {
+                continue;
+            }
+
+            texts.remove(key);
+        }
+
+        if (texts.isEmpty()) {
+            PLAYER_LINE_TEXTS.remove(viewerId, texts);
         }
     }
 

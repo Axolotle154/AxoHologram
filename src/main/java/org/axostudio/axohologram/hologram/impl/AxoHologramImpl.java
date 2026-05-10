@@ -58,6 +58,8 @@ public class AxoHologramImpl implements Hologram {
     private volatile VisibilityMode visibilityMode;
     private volatile int viewDistance;
     private volatile float scale;
+    private volatile float scaleY;
+    private volatile float scaleZ;
     private volatile Billboard billboard;
     private volatile float shadowStrength;
     private volatile float shadowRadius;
@@ -86,6 +88,8 @@ public class AxoHologramImpl implements Hologram {
         this.visibilityMode = VisibilityMode.ALL;
         this.viewDistance = -1;
         this.scale = 1.0F;
+        this.scaleY = 1.0F;
+        this.scaleZ = 1.0F;
         this.billboard = Billboard.fromString(plugin.getConfigManager().getConfig().getString("general.defaults.billboard", "center"));
         this.shadowStrength = 1.0F;
         this.shadowRadius = 0.0F;
@@ -274,12 +278,39 @@ public class AxoHologramImpl implements Hologram {
 
     @Override
     public float getScale() {
-        return scale;
+        return Math.max(scale, Math.max(scaleY, scaleZ));
     }
 
     @Override
     public void setScale(float scale) {
-        this.scale = scale <= 0.0F ? 1.0F : scale;
+        float normalized = scale <= 0.0F ? 1.0F : scale;
+        this.scale = normalized;
+        this.scaleY = normalized;
+        this.scaleZ = normalized;
+        plugin.getHologramManager().saveHologram(this);
+        refreshViewers();
+    }
+
+    @Override
+    public float getScaleX() {
+        return scale;
+    }
+
+    @Override
+    public float getScaleY() {
+        return scaleY;
+    }
+
+    @Override
+    public float getScaleZ() {
+        return scaleZ;
+    }
+
+    @Override
+    public void setScale(float scaleX, float scaleY, float scaleZ) {
+        this.scale = scaleX <= 0.0F ? 1.0F : scaleX;
+        this.scaleY = scaleY <= 0.0F ? 1.0F : scaleY;
+        this.scaleZ = scaleZ <= 0.0F ? 1.0F : scaleZ;
         plugin.getHologramManager().saveHologram(this);
         refreshViewers();
     }
@@ -646,6 +677,80 @@ public class AxoHologramImpl implements Hologram {
         }
     }
 
+    public void refreshDisplayAnimationViewers() {
+        if (viewers.isEmpty()) {
+            return;
+        }
+
+        for (UUID uuid : new ArrayList<>(viewers.keySet())) {
+            Player player = Bukkit.getPlayer(uuid);
+            if (player == null || !player.isOnline()) {
+                viewers.remove(uuid);
+                continue;
+            }
+            plugin.getSchedulerUtil().runAtEntity(player, () -> refreshDisplayAnimationNow(player));
+        }
+    }
+
+    private void refreshDisplayAnimationNow(Player player) {
+        if (!canViewNow(player)) {
+            hide(player);
+            return;
+        }
+
+        PlayerHologramData data = viewers.get(player.getUniqueId());
+        if (data == null || data.isDirty()) {
+            updateNow(player);
+            return;
+        }
+
+        int pageIndex = resolveVisiblePageIndex(player, data.getCurrentPageIndex());
+        if (pageIndex < 0) {
+            hide(player);
+            return;
+        }
+
+        HologramPage page = pages.get(pageIndex);
+        if (pageIndex != data.getCurrentPageIndex() || data.isPageContentDirty(pageIndex, page)) {
+            data.setCurrentPageIndex(pageIndex);
+            updateNow(player);
+            return;
+        }
+
+        if (!updateDisplayAnimationPage(player, page, pageIndex)) {
+            updateNow(player);
+        }
+    }
+
+    private boolean updateDisplayAnimationPage(Player player, HologramPage page, int pageIndex) {
+        Location baseLocation = getLocation().add(offset);
+        if (isSimpleTextPage(page)) {
+            return HologramPacketManager.updateLineDisplayState(player, this, pageIndex, -1, baseLocation, billboard);
+        }
+
+        double lineSpacing = plugin.getConfigManager().getConfig().getDouble("general.defaults.line-spacing", 0.25D);
+        double currentYOffset = 0.0D;
+        boolean updatedAllLines = true;
+        for (int lineIndex = 0; lineIndex < page.getLines().size(); lineIndex++) {
+            HologramLine line = page.getLines().get(lineIndex);
+            if (!line.canView(player)) {
+                line.destroy(player, id, pageIndex, lineIndex);
+                continue;
+            }
+
+            Billboard effectiveBillboard = line.hasBillboardOverride() ? line.getBillboard() : billboard;
+            HologramLine nextVisibleLine = findNextVisibleLine(player, page, lineIndex + 1);
+            Location lineLocation = baseLocation.clone().add(
+                    line.getOffset().getX(),
+                    currentYOffset + line.getOffset().getY(),
+                    line.getOffset().getZ()
+            );
+            updatedAllLines &= HologramPacketManager.updateLineDisplayState(player, this, pageIndex, lineIndex, lineLocation, effectiveBillboard);
+            currentYOffset -= resolveLineStep(line, nextVisibleLine, lineSpacing);
+        }
+        return updatedAllLines;
+    }
+
     @Override
     public boolean requiresPeriodicRefresh() {
         if (!enabled) {
@@ -744,8 +849,8 @@ public class AxoHologramImpl implements Hologram {
         section.set("visibility.mode", visibilityMode.name());
         section.set("visibility.distance", viewDistance > 0 ? viewDistance : null);
         section.set("scale.x", scale);
-        section.set("scale.y", scale);
-        section.set("scale.z", scale);
+        section.set("scale.y", scaleY);
+        section.set("scale.z", scaleZ);
         section.set("billboard", billboard.name());
         section.set("shadow.strength", shadowStrength);
         section.set("shadow.radius", shadowRadius);
@@ -793,7 +898,7 @@ public class AxoHologramImpl implements Hologram {
         for (HologramPage page : pages) {
             YamlConfiguration pageConfig = new YamlConfiguration();
             page.serialize(pageConfig);
-            serializedPages.add(pageConfig.getValues(true));
+            serializedPages.add(pageConfig.getValues(false));
         }
         section.set("pages", serializedPages);
     }
@@ -856,10 +961,16 @@ public class AxoHologramImpl implements Hologram {
 
         if (section.contains("scale.x")) {
             hologram.scale = Math.max(0.01F, (float) section.getDouble("scale.x", 1.0D));
+            hologram.scaleY = Math.max(0.01F, (float) section.getDouble("scale.y", hologram.scale));
+            hologram.scaleZ = Math.max(0.01F, (float) section.getDouble("scale.z", hologram.scale));
         } else if (section.contains("scale_x")) {
             hologram.scale = Math.max(0.01F, (float) section.getDouble("scale_x", 1.0D));
+            hologram.scaleY = Math.max(0.01F, (float) section.getDouble("scale_y", hologram.scale));
+            hologram.scaleZ = Math.max(0.01F, (float) section.getDouble("scale_z", hologram.scale));
         } else {
             hologram.scale = Math.max(0.01F, (float) section.getDouble("scale", 1.0D));
+            hologram.scaleY = hologram.scale;
+            hologram.scaleZ = hologram.scale;
         }
         hologram.billboard = section.contains("billboard")
                 ? Billboard.fromString(section.getString("billboard"))
@@ -969,6 +1080,7 @@ public class AxoHologramImpl implements Hologram {
                     }
 
                     Billboard effectiveBillboard = line.hasBillboardOverride() ? line.getBillboard() : billboard;
+                    HologramLine nextVisibleLine = findNextVisibleLine(player, page, lineIndex + 1);
                     Location lineLocation = baseLocation.clone().add(
                             line.getOffset().getX(),
                             currentYOffset + line.getOffset().getY(),
@@ -980,7 +1092,7 @@ public class AxoHologramImpl implements Hologram {
                         line.spawn(player, this, pageIndex, lineIndex, lineLocation, effectiveBillboard);
                     }
                     visibleLines.put(lineIndex, line);
-                    currentYOffset -= lineSpacing;
+                    currentYOffset -= resolveLineStep(line, nextVisibleLine, lineSpacing);
                 }
 
                 HologramPacketManager.destroyLinesExcept(player, id, pageIndex, visibleLines.keySet());
@@ -990,6 +1102,45 @@ public class AxoHologramImpl implements Hologram {
             data.setPageContent(pageIndex, page);
             data.setClean();
         }
+    }
+
+    private HologramLine findNextVisibleLine(Player player, HologramPage page, int startIndex) {
+        for (int lineIndex = startIndex; lineIndex < page.getLines().size(); lineIndex++) {
+            HologramLine line = page.getLines().get(lineIndex);
+            if (line.canView(player)) {
+                return line;
+            }
+        }
+        return null;
+    }
+
+    private double resolveLineStep(HologramLine line, HologramLine nextLine, double textLineSpacing) {
+        double step = resolveLineHeight(line, textLineSpacing);
+        if (nextLine != null && !line.hasHeightOverride() && !nextLine.hasHeightOverride()) {
+            step = Math.max(step, resolveLineHeight(nextLine, textLineSpacing));
+        }
+        return step;
+    }
+
+    private double resolveLineHeight(HologramLine line, double textLineSpacing) {
+        if (line == null) {
+            return textLineSpacing;
+        }
+        if (line.hasHeightOverride()) {
+            return Math.max(0.0D, line.getHeight());
+        }
+
+        return switch (line.getType()) {
+            case ITEM -> resolveDefaultDisplayLineHeight("general.defaults.item-line-height", 0.65D, textLineSpacing);
+            case BLOCK -> resolveDefaultDisplayLineHeight("general.defaults.block-line-height", 1.0D, textLineSpacing);
+            case TEXT -> textLineSpacing;
+        };
+    }
+
+    private double resolveDefaultDisplayLineHeight(String path, double fallback, double textLineSpacing) {
+        double configured = Math.max(0.0D, plugin.getConfigManager().getConfig().getDouble(path, fallback));
+        double scaledHeight = configured * Math.max(0.01D, scale);
+        return Math.max(textLineSpacing, scaledHeight);
     }
 
     private void renderSimpleTextPage(Player player, HologramPage page, int pageIndex, Location baseLocation, boolean updateExisting) {
@@ -1035,6 +1186,9 @@ public class AxoHologramImpl implements Hologram {
             if (textLine.hasBillboardOverride()) {
                 return false;
             }
+            if (textLine.hasHeightOverride()) {
+                return false;
+            }
             if (textLine.getPermission() != null && !textLine.getPermission().isBlank()) {
                 return false;
             }
@@ -1059,6 +1213,7 @@ public class AxoHologramImpl implements Hologram {
                 && pages.getFirst().getLine(0) instanceof BlockLineImpl blockLine
                 && blockLine.getPermission() == null
                 && !blockLine.hasBillboardOverride()
+                && !blockLine.hasHeightOverride()
                 && blockLine.getOffset().getX() == 0.0D
                 && blockLine.getOffset().getY() == 0.0D
                 && blockLine.getOffset().getZ() == 0.0D;
@@ -1071,6 +1226,7 @@ public class AxoHologramImpl implements Hologram {
                 && pages.getFirst().getLine(0) instanceof ItemLineImpl itemLine
                 && itemLine.getPermission() == null
                 && !itemLine.hasBillboardOverride()
+                && !itemLine.hasHeightOverride()
                 && itemLine.getOffset().getX() == 0.0D
                 && itemLine.getOffset().getY() == 0.0D
                 && itemLine.getOffset().getZ() == 0.0D;

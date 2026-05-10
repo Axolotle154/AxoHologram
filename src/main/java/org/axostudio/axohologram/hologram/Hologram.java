@@ -44,6 +44,23 @@ public interface Hologram {
     void setViewDistance(int viewDistance);
     float getScale();
     void setScale(float scale);
+
+    default float getScaleX() {
+        return getScale();
+    }
+
+    default float getScaleY() {
+        return getScale();
+    }
+
+    default float getScaleZ() {
+        return getScale();
+    }
+
+    default void setScale(float scaleX, float scaleY, float scaleZ) {
+        setScale(Math.max(scaleX, Math.max(scaleY, scaleZ)));
+    }
+
     Billboard getBillboard();
     void setBillboard(Billboard billboard);
     float getShadowStrength();

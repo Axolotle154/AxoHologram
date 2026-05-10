@@ -17,6 +17,8 @@ import org.axostudio.axohologram.hologram.line.impl.TextLineImpl;
 import org.axostudio.axohologram.hologram.page.HologramPage;
 import org.axostudio.axohologram.hologram.page.impl.AxoHologramPageImpl;
 import org.axostudio.axohologram.hologram.visibility.VisibilityMode;
+import org.axostudio.axohologram.importer.HologramImporter;
+import org.axostudio.axohologram.importer.ImportResult;
 import org.axostudio.axohologram.util.ColorUtil;
 import org.axostudio.axohologram.util.MessageUtil;
 import org.bukkit.Color;
@@ -44,9 +46,10 @@ import java.util.stream.IntStream;
 public class HologramCommand implements BasicCommand {
 
     private static final List<String> PAGE_ACTIONS = List.of("add", "delete", "default");
-    private static final List<String> LINE_ACTIONS = List.of("add", "delete", "set", "offset");
+    private static final List<String> LINE_ACTIONS = List.of("add", "delete", "set", "offset", "height");
     private static final List<String> NPC_ACTIONS = List.of("link", "unlink", "info");
     private static final List<String> ACTION_ACTIONS = List.of("add", "remove", "list");
+    private static final List<String> IMPORT_SOURCES = List.of("auto", "fancy", "decent");
     private static final List<String> VISIBILITY_MODES = List.of("all", "manual", "permission");
     private static final List<String> SHADOW_ACTIONS = List.of("strength", "radius");
     private static final List<String> ALIGNMENTS = List.of("center", "left", "right");
@@ -81,6 +84,7 @@ public class HologramCommand implements BasicCommand {
             case "offset", "translate" -> handleOffset(sender, args);
             case "teleport" -> handleTeleport(sender, args);
             case "list" -> handleList(sender);
+            case "import" -> handleImport(sender, args);
             case "reload" -> handleReload(sender);
             case "version", "ver" -> handleVersion(sender);
             case "page" -> handlePage(sender, args);
@@ -458,6 +462,45 @@ public class HologramCommand implements BasicCommand {
         }
     }
 
+    private void handleImport(CommandSender sender, String[] args) {
+        if (!requirePermission(sender, "axohologram.import")) {
+            return;
+        }
+        if (args.length < 2) {
+            MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("import-usage"));
+            return;
+        }
+
+        String source = args[1].toLowerCase(Locale.ROOT);
+        if (source.equals("auto")) {
+            ImportResult result = plugin.getImportManager().importAuto();
+            sendImportResult(sender, result);
+            return;
+        }
+
+        if (args.length < 3) {
+            MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("import-usage"));
+            return;
+        }
+
+        HologramImporter importer = plugin.getImportManager().importer(source);
+        if (importer == null) {
+            MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("import-source-not-found")
+                    .replace("<source>", args[1]));
+            return;
+        }
+        if (!importer.isAvailable()) {
+            MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("import-source-unavailable")
+                    .replace("<source>", importer.displayName()));
+            return;
+        }
+
+        ImportResult result = args[2].equalsIgnoreCase("all")
+                ? importer.importAll()
+                : importer.importHologram(args[2]);
+        sendImportResult(sender, result);
+    }
+
     private void handleReload(CommandSender sender) {
         if (!requirePermission(sender, "axohologram.reload")) {
             return;
@@ -704,6 +747,7 @@ public class HologramCommand implements BasicCommand {
             case "remove", "delete" -> handleLineRemove(sender, args, hologram, page, pageNumber);
             case "set" -> handleLineSet(sender, args, hologram, page, pageNumber);
             case "offset" -> handleLineOffset(sender, args, hologram, page, pageNumber);
+            case "height" -> handleLineHeight(sender, args, hologram, page, pageNumber);
             default -> MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("line-usage"));
         }
     }
@@ -972,6 +1016,51 @@ public class HologramCommand implements BasicCommand {
         } catch (NumberFormatException exception) {
             MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("invalid-offset-number"));
         }
+    }
+
+    private void handleLineHeight(CommandSender sender, String[] args, Hologram hologram, HologramPage page, int pageNumber) {
+        if (args.length < 6) {
+            MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("line-height-usage"));
+            return;
+        }
+
+        Integer lineNumber = parsePositiveInt(sender, args[4], "invalid-line-number");
+        if (lineNumber == null) {
+            return;
+        }
+
+        HologramLine line = page.getLine(lineNumber - 1);
+        if (line == null) {
+            MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("line-not-found")
+                    .replace("<hologram_id>", hologram.getId())
+                    .replace("<page_number>", String.valueOf(pageNumber))
+                    .replace("<line_number>", String.valueOf(lineNumber)));
+            return;
+        }
+
+        String rawHeight = args[5];
+        if (rawHeight.equalsIgnoreCase("default")) {
+            line.clearHeight();
+        } else {
+            try {
+                double height = Double.parseDouble(rawHeight);
+                if (height < 0.0D) {
+                    MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("invalid-line-height-number"));
+                    return;
+                }
+                line.setHeight(height);
+            } catch (NumberFormatException exception) {
+                MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("invalid-line-height-number"));
+                return;
+            }
+        }
+
+        plugin.getHologramManager().saveHologram(hologram);
+        hologram.refreshViewers();
+        String displayHeight = line.hasHeightOverride() ? String.valueOf(line.getHeight()) : "default";
+        MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("line-height-success")
+                .replace("<line_number>", String.valueOf(lineNumber))
+                .replace("<height>", displayHeight));
     }
 
     private void handlePermission(CommandSender sender, String[] args) {
@@ -1487,6 +1576,7 @@ public class HologramCommand implements BasicCommand {
             case "shadow" -> suggestShadowCommand(args);
             case "permission" -> suggestPermissionCommand(args);
             case "npc" -> suggestNpcCommand(args);
+            case "import" -> suggestImportCommand(args);
             case "linkwithnpc" -> suggestLinkWithNpcAlias(args);
             case "unlinkwithnpc" -> args.length == 2 ? complete(args[1], hologramIds()) : List.of();
             case "action" -> suggestActionCommand(args);
@@ -1577,6 +1667,12 @@ public class HologramCommand implements BasicCommand {
                     }
                     yield complete(args[4], lineNumbers(page));
                 }
+                case "height" -> {
+                    if (resolveLine(page, args[4]) != null) {
+                        yield List.of("default", "0", "0.25", "0.65", "1.0");
+                    }
+                    yield complete(args[4], lineNumbers(page));
+                }
                 default -> List.of();
             };
         }
@@ -1589,6 +1685,7 @@ public class HologramCommand implements BasicCommand {
                     yield line == null ? List.of() : contentSuggestionsForLine(line, args[5]);
                 }
                 case "offset" -> List.of("0");
+                case "height" -> complete(args[5], List.of("default", "0", "0.25", "0.65", "1.0"));
                 default -> List.of();
             };
         }
@@ -1744,6 +1841,23 @@ public class HologramCommand implements BasicCommand {
         }
         if (args.length == 4 && "link".equalsIgnoreCase(args[1])) {
             return complete(args[3], availableNpcNames());
+        }
+        return List.of();
+    }
+
+    private Collection<String> suggestImportCommand(String[] args) {
+        if (args.length == 2) {
+            return complete(args[1], IMPORT_SOURCES);
+        }
+        if (args.length == 3 && !args[1].equalsIgnoreCase("auto")) {
+            HologramImporter importer = plugin.getImportManager().importer(args[1]);
+            if (importer == null) {
+                return List.of();
+            }
+            List<String> suggestions = new ArrayList<>();
+            suggestions.add("all");
+            suggestions.addAll(importer.availableHolograms());
+            return complete(args[2], suggestions);
         }
         return List.of();
     }
@@ -1940,6 +2054,30 @@ public class HologramCommand implements BasicCommand {
         };
         String message = Objects.requireNonNullElse(plugin.getConfigManager().getMessages().getString(messageKey), "");
         MessageUtil.sendMessage(sender, message.replace("<content>", content));
+    }
+
+    private void sendImportResult(CommandSender sender, ImportResult result) {
+        MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("import-summary")
+                .replace("<source>", result.source())
+                .replace("<attempted>", String.valueOf(result.attempted()))
+                .replace("<imported>", String.valueOf(result.imported()))
+                .replace("<skipped>", String.valueOf(result.skipped()))
+                .replace("<failed>", String.valueOf(result.failed())));
+
+        int limit = Math.min(10, result.messages().size());
+        for (int i = 0; i < limit; i++) {
+            MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("import-message-entry")
+                    .replace("<message>", escapeMiniMessage(result.messages().get(i))));
+        }
+        int remaining = result.messages().size() - limit;
+        if (remaining > 0) {
+            MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("import-message-more")
+                    .replace("<count>", String.valueOf(remaining)));
+        }
+    }
+
+    private String escapeMiniMessage(String value) {
+        return value == null ? "" : value.replace("\\", "\\\\").replace("<", "\\<");
     }
 
     private HologramPage requirePage(CommandSender sender, Hologram hologram, int pageNumber) {
@@ -2245,6 +2383,9 @@ public class HologramCommand implements BasicCommand {
         }
         if (canUse(sender, "axohologram.list")) {
             commands.add("list");
+        }
+        if (canUse(sender, "axohologram.import")) {
+            commands.add("import");
         }
         if (canUse(sender, "axohologram.reload")) {
             commands.add("reload");

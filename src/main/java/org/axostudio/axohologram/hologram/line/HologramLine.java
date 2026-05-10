@@ -14,6 +14,11 @@ public interface HologramLine {
     Vector getOffset();
     void setOffset(Vector offset);
 
+    double getHeight();
+    void setHeight(double height);
+    void clearHeight();
+    boolean hasHeightOverride();
+
     Billboard getBillboard();
     void setBillboard(Billboard billboard);
     boolean hasBillboardOverride();

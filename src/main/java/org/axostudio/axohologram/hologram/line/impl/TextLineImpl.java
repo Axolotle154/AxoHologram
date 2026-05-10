@@ -13,11 +13,15 @@ import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.Player;
 import org.bukkit.util.Vector;
 
+import java.util.Map;
+
 public class TextLineImpl implements HologramLine {
 
     private final AxoHologram plugin;
     private volatile String content;
     private volatile Vector offset;
+    private volatile double height;
+    private volatile boolean heightOverride;
     private volatile Billboard billboard;
     private volatile boolean billboardOverride;
     private volatile String permission;
@@ -26,6 +30,8 @@ public class TextLineImpl implements HologramLine {
         this.content = content;
         this.plugin = plugin;
         this.offset = new Vector(0, 0, 0);
+        this.height = 0.0D;
+        this.heightOverride = false;
         this.billboard = Billboard.fromString(plugin.getConfigManager().getConfig().getString("general.defaults.billboard", "center"));
         this.billboardOverride = false;
         this.permission = null;
@@ -52,6 +58,28 @@ public class TextLineImpl implements HologramLine {
     @Override
     public void setOffset(Vector offset) {
         this.offset = offset == null ? new Vector() : offset.clone();
+    }
+
+    @Override
+    public double getHeight() {
+        return height;
+    }
+
+    @Override
+    public void setHeight(double height) {
+        this.height = Math.max(0.0D, height);
+        this.heightOverride = true;
+    }
+
+    @Override
+    public void clearHeight() {
+        this.height = 0.0D;
+        this.heightOverride = false;
+    }
+
+    @Override
+    public boolean hasHeightOverride() {
+        return heightOverride;
     }
 
     @Override
@@ -106,9 +134,11 @@ public class TextLineImpl implements HologramLine {
     public void serialize(ConfigurationSection section) {
         section.set("type", getType().name());
         section.set("content", content);
-        section.set("offset.x", offset.getX());
-        section.set("offset.y", offset.getY());
-        section.set("offset.z", offset.getZ());
+        ConfigurationSection offsetSection = section.createSection("offset");
+        offsetSection.set("x", offset.getX());
+        offsetSection.set("y", offset.getY());
+        offsetSection.set("z", offset.getZ());
+        section.set("height", heightOverride ? height : null);
         if (billboardOverride) {
             section.set("billboard", billboard.name());
         } else {
@@ -125,16 +155,63 @@ public class TextLineImpl implements HologramLine {
         String content = section.getString("content", "");
         TextLineImpl line = new TextLineImpl(content, plugin);
 
-        if (section.isConfigurationSection("offset") || section.contains("offset.x")) {
-            double x = section.getDouble("offset.x", 0);
-            double y = section.getDouble("offset.y", 0);
-            double z = section.getDouble("offset.z", 0);
-            line.setOffset(new Vector(x, y, z));
+        Vector offset = readOffset(section);
+        if (offset != null) {
+            line.setOffset(offset);
+        }
+        if (section.contains("height") || section.contains("line-height")) {
+            line.setHeight(section.contains("height")
+                    ? section.getDouble("height", 0.0D)
+                    : section.getDouble("line-height", 0.0D));
         }
         if (section.contains("billboard")) {
             line.setBillboard(Billboard.fromString(section.getString("billboard")));
         }
         line.setPermission(section.getString("permission"));
         return line;
+    }
+
+    private static Vector readOffset(ConfigurationSection section) {
+        ConfigurationSection offsetSection = section.getConfigurationSection("offset");
+        if (offsetSection != null) {
+            return new Vector(
+                    offsetSection.getDouble("x", 0.0D),
+                    offsetSection.getDouble("y", 0.0D),
+                    offsetSection.getDouble("z", 0.0D)
+            );
+        }
+
+        Object rawOffset = section.getValues(false).get("offset");
+        if (rawOffset instanceof Map<?, ?> offsetMap) {
+            return new Vector(
+                    readDouble(offsetMap.get("x"), 0.0D),
+                    readDouble(offsetMap.get("y"), 0.0D),
+                    readDouble(offsetMap.get("z"), 0.0D)
+            );
+        }
+
+        Map<String, Object> values = section.getValues(false);
+        if (values.containsKey("offset.x") || values.containsKey("offset.y") || values.containsKey("offset.z")) {
+            return new Vector(
+                    readDouble(values.get("offset.x"), 0.0D),
+                    readDouble(values.get("offset.y"), 0.0D),
+                    readDouble(values.get("offset.z"), 0.0D)
+            );
+        }
+        return null;
+    }
+
+    private static double readDouble(Object value, double fallback) {
+        if (value instanceof Number number) {
+            return number.doubleValue();
+        }
+        if (value instanceof String text) {
+            try {
+                return Double.parseDouble(text);
+            } catch (NumberFormatException ignored) {
+                return fallback;
+            }
+        }
+        return fallback;
     }
 }

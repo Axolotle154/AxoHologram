@@ -111,7 +111,7 @@ public class AxoHologramPageImpl implements HologramPage {
         for (HologramLine line : lines) {
             YamlConfiguration lineConfig = new YamlConfiguration();
             line.serialize(lineConfig);
-            serializedLines.add(lineConfig.getValues(true));
+            serializedLines.add(lineConfig.getValues(false));
         }
         section.set("lines", serializedLines);
     }
@@ -175,6 +175,9 @@ public class AxoHologramPageImpl implements HologramPage {
                 return false;
             }
             if (textLine.hasBillboardOverride()) {
+                return false;
+            }
+            if (textLine.hasHeightOverride()) {
                 return false;
             }
             if (textLine.getPermission() != null && !textLine.getPermission().isBlank()) {

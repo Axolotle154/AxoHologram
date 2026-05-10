@@ -9,6 +9,7 @@ import org.axostudio.axohologram.api.AxoHologramProvider;
 import org.axostudio.axohologram.command.HologramCommand;
 import org.axostudio.axohologram.config.ConfigManager;
 import org.axostudio.axohologram.hologram.HologramManager;
+import org.axostudio.axohologram.importer.ImportManager;
 import org.axostudio.axohologram.integration.fancynpcs.FancyNpcHook;
 import org.axostudio.axohologram.integration.MiniPlaceholdersIntegration;
 import org.axostudio.axohologram.integration.npc.NpcLinkService;
@@ -35,6 +36,7 @@ public final class AxoHologram extends JavaPlugin {
     private UpdateChecker updateChecker;
     private AnimationConfigManager animationConfigManager;
     private AnimationManager animationManager;
+    private ImportManager importManager;
     private AxoHologramAPI api;
 
     @Override
@@ -52,6 +54,7 @@ public final class AxoHologram extends JavaPlugin {
         this.api = new AxoHologramProvider(this);
         getServer().getServicesManager().register(AxoHologramAPI.class, api, this, ServicePriority.Normal);
         this.hologramManager = new HologramManager(this);
+        this.importManager = new ImportManager(this);
         hologramManager.loadHolograms();
         animationManager.start();
         this.updateChecker = new UpdateChecker(this);
@@ -229,6 +232,10 @@ public final class AxoHologram extends JavaPlugin {
 
     public AnimationManager getAnimationManager() {
         return animationManager;
+    }
+
+    public ImportManager getImportManager() {
+        return importManager;
     }
 
     private void checkForUpdates() {

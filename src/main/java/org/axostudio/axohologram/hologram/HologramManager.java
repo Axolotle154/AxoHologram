@@ -178,6 +178,28 @@ public class HologramManager {
         return Collections.unmodifiableCollection(holograms.values());
     }
 
+    public synchronized boolean registerImportedHologram(Hologram hologram, boolean overwrite) {
+        if (hologram == null || !isValidHologramId(hologram.getId())) {
+            return false;
+        }
+
+        Hologram existing = holograms.get(hologram.getId());
+        if (existing != null && !overwrite) {
+            return false;
+        }
+        if (existing != null) {
+            existing.destroy();
+        }
+
+        holograms.put(hologram.getId(), hologram);
+        saveHologram(hologram);
+        restartRefreshTask();
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            hologram.updateVisibility(player, true);
+        }
+        return true;
+    }
+
     public void destroyAllHolograms() {
         holograms.values().forEach(Hologram::destroy);
     }

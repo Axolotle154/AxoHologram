@@ -8,6 +8,8 @@ general:
   visibility-check-interval: 20
   defaults:
     line-spacing: 0.25
+    item-line-height: 0.65
+    block-line-height: 1.0
     billboard: "center"
     create-default-line: true
     create-default-line-format: "<white><id></white>"
@@ -26,3 +28,11 @@ integrations:
   fancynpcs: true
   fancynpcs-sync-interval: 10
   fancynpcs-y-offset: 2.2
+
+importer:
+  enabled: true
+  backup-before-import: true
+  overwrite-existing: false
+  import-animations: true
+  import-placeholders: true
+  auto-detect-installed-plugins: true

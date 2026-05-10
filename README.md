@@ -295,7 +295,7 @@ Dependencia Maven recomendada si publicas AxoHologram en JitPack:
     <dependency>
         <groupId>com.github.AxoStudio</groupId>
         <artifactId>AxoHologram</artifactId>
-        <version>1.1.4-alpha</version>
+        <version>1.1.8-alpha</version>
         <scope>provided</scope>
     </dependency>
 </dependencies>
