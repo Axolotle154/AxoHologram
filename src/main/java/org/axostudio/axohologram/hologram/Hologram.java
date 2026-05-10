@@ -16,6 +16,7 @@ import org.bukkit.util.Vector;
 import java.util.Collection;
 import java.util.List;
 
+@SuppressWarnings({"unused", "UnusedReturnValue"})
 public interface Hologram {
 
     String getId();

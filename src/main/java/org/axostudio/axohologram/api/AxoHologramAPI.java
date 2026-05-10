@@ -11,6 +11,7 @@ import java.util.Optional;
 /**
  * Public API for creating and controlling AxoHologram holograms from other plugins.
  */
+@SuppressWarnings({"unused", "UnusedReturnValue"})
 public interface AxoHologramAPI {
 
     /**

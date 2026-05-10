@@ -49,7 +49,6 @@ public class HologramCommand implements BasicCommand {
     private static final List<String> LINE_ACTIONS = List.of("add", "delete", "set", "offset", "height");
     private static final List<String> NPC_ACTIONS = List.of("link", "unlink", "info");
     private static final List<String> ACTION_ACTIONS = List.of("add", "remove", "list");
-    private static final List<String> IMPORT_SOURCES = List.of("auto", "fancy", "decent");
     private static final List<String> VISIBILITY_MODES = List.of("all", "manual", "permission");
     private static final List<String> SHADOW_ACTIONS = List.of("strength", "radius");
     private static final List<String> ALIGNMENTS = List.of("center", "left", "right");
@@ -512,7 +511,7 @@ public class HologramCommand implements BasicCommand {
 
     private void handleVersion(CommandSender sender) {
         MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("version-info")
-                .replace("<version>", plugin.getDescription().getVersion()));
+                .replace("<version>", plugin.getPluginMeta().getVersion()));
     }
 
     private void handleNpc(CommandSender sender, String[] args) {
@@ -1847,7 +1846,7 @@ public class HologramCommand implements BasicCommand {
 
     private Collection<String> suggestImportCommand(String[] args) {
         if (args.length == 2) {
-            return complete(args[1], IMPORT_SOURCES);
+            return complete(args[1], importSources());
         }
         if (args.length == 3 && !args[1].equalsIgnoreCase("auto")) {
             HologramImporter importer = plugin.getImportManager().importer(args[1]);
@@ -1860,6 +1859,13 @@ public class HologramCommand implements BasicCommand {
             return complete(args[2], suggestions);
         }
         return List.of();
+    }
+
+    private List<String> importSources() {
+        List<String> sources = new ArrayList<>();
+        sources.add("auto");
+        plugin.getImportManager().importers().forEach(importer -> sources.add(importer.id()));
+        return sources;
     }
 
     private Collection<String> suggestLinkWithNpcAlias(String[] args) {

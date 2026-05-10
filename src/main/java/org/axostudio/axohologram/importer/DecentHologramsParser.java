@@ -191,7 +191,7 @@ public final class DecentHologramsParser {
                     parts.length > 5 ? Float.parseFloat(parts[5].trim()) : 0.0F
             );
             return new ImportParserUtil.ParsedLocation(worldName, location);
-        } catch (NumberFormatException exception) {
+        } catch (NumberFormatException ignored) {
             return null;
         }
     }

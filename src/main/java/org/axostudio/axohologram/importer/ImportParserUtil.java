@@ -62,7 +62,7 @@ final class ImportParserUtil {
         }
         try {
             return TextDisplay.TextAlignment.valueOf(raw.trim().toUpperCase(Locale.ROOT));
-        } catch (IllegalArgumentException exception) {
+        } catch (IllegalArgumentException ignored) {
             return TextDisplay.TextAlignment.CENTER;
         }
     }
