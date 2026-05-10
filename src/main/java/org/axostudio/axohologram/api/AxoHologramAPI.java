@@ -36,6 +36,31 @@ public interface AxoHologramAPI {
     Hologram createHologram(String id, Location location, List<String> lines, boolean saveToYaml);
 
     /**
+     * Creates a persistent item hologram and saves it to YAML.
+     * <p>
+     * The item content accepts material names and {@code PLAYER_HEAD(identifier)}.
+     * The optional {@code #ITEM:} prefix is also accepted. Player heads support
+     * player name, UUID, base64/value, texture URL and texture hash identifiers.
+     *
+     * @param id unique hologram id
+     * @param location hologram location with a loaded world
+     * @param itemContent item content to display
+     * @return created hologram
+     */
+    Hologram createItemHologram(String id, Location location, String itemContent);
+
+    /**
+     * Creates an item hologram.
+     *
+     * @param id unique hologram id
+     * @param location hologram location with a loaded world
+     * @param itemContent item content to display
+     * @param saveToYaml true for persistent holograms, false for runtime-only holograms
+     * @return created hologram
+     */
+    Hologram createItemHologram(String id, Location location, String itemContent, boolean saveToYaml);
+
+    /**
      * Creates a temporary text hologram with an automatically generated id.
      *
      * @param location hologram location with a loaded world
@@ -74,6 +99,46 @@ public interface AxoHologramAPI {
      * @return created temporary hologram
      */
     Hologram createTemporaryHologram(String id, Location location, List<String> lines, long durationTicks);
+
+    /**
+     * Creates a temporary item hologram with an automatically generated id.
+     *
+     * @param location hologram location with a loaded world
+     * @param itemContent item content to display
+     * @return created temporary hologram
+     */
+    Hologram createTemporaryItemHologram(Location location, String itemContent);
+
+    /**
+     * Creates a temporary item hologram. If id is null or blank, an id is generated.
+     *
+     * @param id optional unique hologram id
+     * @param location hologram location with a loaded world
+     * @param itemContent item content to display
+     * @return created temporary hologram
+     */
+    Hologram createTemporaryItemHologram(String id, Location location, String itemContent);
+
+    /**
+     * Creates a temporary item hologram and removes it after the given duration.
+     *
+     * @param location hologram location with a loaded world
+     * @param itemContent item content to display
+     * @param durationTicks lifetime in server ticks; values <= 0 do not schedule removal
+     * @return created temporary hologram
+     */
+    Hologram createTemporaryItemHologram(Location location, String itemContent, long durationTicks);
+
+    /**
+     * Creates a temporary item hologram and removes it after the given duration.
+     *
+     * @param id optional unique hologram id
+     * @param location hologram location with a loaded world
+     * @param itemContent item content to display
+     * @param durationTicks lifetime in server ticks; values <= 0 do not schedule removal
+     * @return created temporary hologram
+     */
+    Hologram createTemporaryItemHologram(String id, Location location, String itemContent, long durationTicks);
 
     /**
      * Deletes a persistent or temporary hologram.
@@ -129,6 +194,22 @@ public interface AxoHologramAPI {
      * @param lines replacement text lines
      */
     void updateLines(Hologram hologram, List<String> lines);
+
+    /**
+     * Replaces the first page with a single item line.
+     *
+     * @param id hologram id
+     * @param itemContent item content to display
+     */
+    void updateItemLine(String id, String itemContent);
+
+    /**
+     * Replaces the first page with a single item line.
+     *
+     * @param hologram hologram instance
+     * @param itemContent item content to display
+     */
+    void updateItemLine(Hologram hologram, String itemContent);
 
     /**
      * Appends a text line to the first page of a hologram.
@@ -195,6 +276,22 @@ public interface AxoHologramAPI {
     void addTextLines(Hologram hologram, List<String> lines);
 
     /**
+     * Appends an item line to the first page of a hologram.
+     *
+     * @param id hologram id
+     * @param itemContent item content to append
+     */
+    void addItemLine(String id, String itemContent);
+
+    /**
+     * Appends an item line to the first page of a hologram.
+     *
+     * @param hologram hologram instance
+     * @param itemContent item content to append
+     */
+    void addItemLine(Hologram hologram, String itemContent);
+
+    /**
      * Appends a raw line to the first page of a hologram.
      *
      * @param id hologram id
@@ -225,6 +322,14 @@ public interface AxoHologramAPI {
      * @param lines lines to append
      */
     void addLines(Hologram hologram, Collection<? extends HologramLine> lines);
+
+    /**
+     * Creates an item line that can be passed to raw line APIs.
+     *
+     * @param itemContent item content to display
+     * @return created item line
+     */
+    HologramLine createItemLine(String itemContent);
 
     /**
      * Returns the internally resolved height of the hologram default page.

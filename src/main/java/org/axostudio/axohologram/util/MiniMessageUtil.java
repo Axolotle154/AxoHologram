@@ -2,6 +2,7 @@ package org.axostudio.axohologram.util;
 
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.minimessage.MiniMessage;
+import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.axostudio.axohologram.AxoHologram;
 import org.axostudio.axohologram.integration.MiniPlaceholdersIntegration;
 import org.bukkit.Bukkit;
@@ -16,6 +17,7 @@ import java.util.regex.Pattern;
 public final class MiniMessageUtil {
 
     private static final MiniMessage MINI_MESSAGE = MiniMessage.miniMessage();
+    private static final PlainTextComponentSerializer PLAIN_TEXT = PlainTextComponentSerializer.plainText();
     private static final char SECTION_CHAR = '\u00A7';
     private static final Pattern LEGACY_HEX_PATTERN = Pattern.compile("(?i)(?:&|\u00A7)#([0-9a-f]{6})");
     private static final Pattern PLACEHOLDER_API_PATTERN = Pattern.compile("%[^%\\s]+%");
@@ -50,6 +52,29 @@ public final class MiniMessageUtil {
 
     public static Component parse(String text) {
         return parse(text, null);
+    }
+
+    public static String resolvePlaceholders(String text, Player player) {
+        if (text == null || text.isEmpty()) {
+            return "";
+        }
+
+        String processedText = applyTextAnimations(text, player);
+        processedText = applyPlaceholderApi(processedText, player);
+        processedText = restoreProtectedAnimationPlaceholders(processedText);
+
+        if (!isMiniPlaceholdersActive()) {
+            return processedText;
+        }
+
+        try {
+            if (player != null) {
+                return PLAIN_TEXT.serialize(MINI_MESSAGE.deserialize(processedText, player, MiniPlaceholdersIntegration.combinedAudiencePlaceholders()));
+            }
+            return PLAIN_TEXT.serialize(MINI_MESSAGE.deserialize(processedText, MiniPlaceholdersIntegration.globalPlaceholders()));
+        } catch (RuntimeException exception) {
+            return processedText;
+        }
     }
 
     public static boolean hasDynamicPlaceholders(String text) {

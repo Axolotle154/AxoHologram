@@ -148,6 +148,11 @@ public final class FancyHologramsParser {
     }
 
     private SourceLine parseItemLine(ConfigurationSection section) {
+        String content = ImportParserUtil.readString(section, "material", "item", "content", "id");
+        if (ImportParserUtil.isPlayerHeadWithIdentifier(content)) {
+            return new SourceLine(LineType.ITEM, ImportParserUtil.stripItemPrefix(content), null, null, new Vector(), null, null, null);
+        }
+
         ItemStack itemStack = ImportParserUtil.readItemStack(section);
         if (itemStack == null) {
             throw new IllegalArgumentException("missing item stack");

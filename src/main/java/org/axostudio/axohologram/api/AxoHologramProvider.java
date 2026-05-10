@@ -3,6 +3,7 @@ package org.axostudio.axohologram.api;
 import org.axostudio.axohologram.AxoHologram;
 import org.axostudio.axohologram.hologram.Hologram;
 import org.axostudio.axohologram.hologram.line.HologramLine;
+import org.axostudio.axohologram.hologram.line.impl.ItemLineImpl;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
@@ -40,6 +41,22 @@ public final class AxoHologramProvider implements AxoHologramAPI {
     }
 
     @Override
+    public Hologram createItemHologram(String id, Location location, String itemContent) {
+        return createItemHologram(id, location, itemContent, true);
+    }
+
+    @Override
+    public Hologram createItemHologram(String id, Location location, String itemContent, boolean saveToYaml) {
+        String normalizedId = validateId(id);
+        validateCreateItemInput(normalizedId, location, itemContent);
+        Hologram hologram = plugin.getHologramManager().createItemHologram(normalizedId, location, itemContent, saveToYaml);
+        if (hologram == null) {
+            throw new IllegalStateException("Could not create item hologram '" + normalizedId + "'.");
+        }
+        return hologram;
+    }
+
+    @Override
     public Hologram createTemporaryHologram(Location location, List<String> lines) {
         return createTemporaryHologram(generateTemporaryId(), location, lines);
     }
@@ -61,6 +78,33 @@ public final class AxoHologramProvider implements AxoHologramAPI {
         Hologram hologram = plugin.getHologramManager().createHologram(normalizedId, location, List.copyOf(lines), false);
         if (hologram == null) {
             throw new IllegalStateException("Could not create temporary hologram '" + normalizedId + "'.");
+        }
+        plugin.getHologramManager().scheduleTemporaryRemoval(normalizedId, durationTicks);
+        return hologram;
+    }
+
+    @Override
+    public Hologram createTemporaryItemHologram(Location location, String itemContent) {
+        return createTemporaryItemHologram(generateTemporaryId(), location, itemContent);
+    }
+
+    @Override
+    public Hologram createTemporaryItemHologram(String id, Location location, String itemContent) {
+        return createTemporaryItemHologram(id, location, itemContent, -1L);
+    }
+
+    @Override
+    public Hologram createTemporaryItemHologram(Location location, String itemContent, long durationTicks) {
+        return createTemporaryItemHologram(generateTemporaryId(), location, itemContent, durationTicks);
+    }
+
+    @Override
+    public Hologram createTemporaryItemHologram(String id, Location location, String itemContent, long durationTicks) {
+        String normalizedId = id == null || id.isBlank() ? generateTemporaryId() : validateId(id);
+        validateCreateItemInput(normalizedId, location, itemContent);
+        Hologram hologram = plugin.getHologramManager().createItemHologram(normalizedId, location, itemContent, false);
+        if (hologram == null) {
+            throw new IllegalStateException("Could not create temporary item hologram '" + normalizedId + "'.");
         }
         plugin.getHologramManager().scheduleTemporaryRemoval(normalizedId, durationTicks);
         return hologram;
@@ -101,6 +145,18 @@ public final class AxoHologramProvider implements AxoHologramAPI {
     public void updateLines(Hologram hologram, List<String> lines) {
         validateLines(lines);
         plugin.getHologramManager().setTextLines(requireHologram(hologram), List.copyOf(lines));
+    }
+
+    @Override
+    public void updateItemLine(String id, String itemContent) {
+        validateItemContent(itemContent);
+        plugin.getHologramManager().setItemLine(requireHologram(id), itemContent);
+    }
+
+    @Override
+    public void updateItemLine(Hologram hologram, String itemContent) {
+        validateItemContent(itemContent);
+        plugin.getHologramManager().setItemLine(requireHologram(hologram), itemContent);
     }
 
     @Override
@@ -148,6 +204,18 @@ public final class AxoHologramProvider implements AxoHologramAPI {
     }
 
     @Override
+    public void addItemLine(String id, String itemContent) {
+        validateItemContent(itemContent);
+        plugin.getHologramManager().addItemLine(requireHologram(id), itemContent);
+    }
+
+    @Override
+    public void addItemLine(Hologram hologram, String itemContent) {
+        validateItemContent(itemContent);
+        plugin.getHologramManager().addItemLine(requireHologram(hologram), itemContent);
+    }
+
+    @Override
     public void addLine(String id, HologramLine line) {
         validateHologramLine(line);
         plugin.getHologramManager().addLine(requireHologram(id), line);
@@ -169,6 +237,12 @@ public final class AxoHologramProvider implements AxoHologramAPI {
     public void addLines(Hologram hologram, Collection<? extends HologramLine> lines) {
         validateHologramLines(lines);
         plugin.getHologramManager().addLines(requireHologram(hologram), List.copyOf(lines));
+    }
+
+    @Override
+    public HologramLine createItemLine(String itemContent) {
+        validateItemContent(itemContent);
+        return new ItemLineImpl(itemContent, plugin);
     }
 
     @Override
@@ -264,6 +338,14 @@ public final class AxoHologramProvider implements AxoHologramAPI {
         }
     }
 
+    private void validateCreateItemInput(String id, Location location, String itemContent) {
+        validateLocation(location);
+        validateItemContent(itemContent);
+        if (plugin.getHologramManager().getHologram(id) != null) {
+            throw new IllegalArgumentException("Hologram id '" + id + "' is already in use.");
+        }
+    }
+
     private String validateId(String id) {
         if (id == null || id.isBlank()) {
             throw new IllegalArgumentException("Hologram id cannot be null or blank.");
@@ -293,6 +375,13 @@ public final class AxoHologramProvider implements AxoHologramAPI {
         if (line == null) {
             throw new IllegalArgumentException("Hologram lines cannot contain null values.");
         }
+    }
+
+    private void validateItemContent(String itemContent) {
+        if (itemContent == null || itemContent.isBlank()) {
+            throw new IllegalArgumentException("Item line content cannot be null or blank.");
+        }
+        new ItemLineImpl(itemContent, plugin);
     }
 
     private void validateHologramLine(HologramLine line) {

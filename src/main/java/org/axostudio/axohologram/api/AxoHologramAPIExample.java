@@ -28,6 +28,12 @@ import java.util.List;
  *     List.of("&e+50 XP"),
  *     60L
  * );
+ *
+ * api.createItemHologram(
+ *     "player_head",
+ *     location,
+ *     "#ITEM:PLAYER_HEAD(%player_name%)"
+ * );
  * }</pre>
  */
 public final class AxoHologramAPIExample {
@@ -53,6 +59,12 @@ public final class AxoHologramAPIExample {
                 location,
                 List.of("&e+50 XP"),
                 60L
+        );
+
+        api.createItemHologram(
+                "player_head",
+                location,
+                "#ITEM:PLAYER_HEAD(%player_name%)"
         );
     }
 }

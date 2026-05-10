@@ -312,6 +312,13 @@ public final class DecentHologramsParser {
         String permission = ImportParserUtil.readString(section, "permission", "view-permission", "view_permission");
 
         if (type == LineType.ITEM) {
+            String itemContent = parsedPrefix != null && parsedPrefix.type() == LineType.ITEM
+                    ? parsedPrefix.content()
+                    : content;
+            if (ImportParserUtil.isPlayerHeadWithIdentifier(itemContent)) {
+                return new SourceLine(LineType.ITEM, ImportParserUtil.stripItemPrefix(itemContent), null, null, offset, height, billboard, permission);
+            }
+
             ItemStack itemStack = parsedPrefix != null && parsedPrefix.itemStack() != null
                     ? parsedPrefix.itemStack()
                     : ImportParserUtil.readItemStack(section);

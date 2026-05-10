@@ -807,6 +807,9 @@ public class AxoHologramImpl implements Hologram {
                 if (line instanceof TextLineImpl textLine && MiniMessageUtil.hasDynamicPlaceholders(textLine.getContent())) {
                     return true;
                 }
+                if (line instanceof ItemLineImpl itemLine && itemLine.requiresDynamicRefresh()) {
+                    return true;
+                }
             }
         }
 

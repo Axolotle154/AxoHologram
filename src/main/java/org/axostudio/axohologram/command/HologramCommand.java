@@ -885,6 +885,7 @@ public class HologramCommand implements BasicCommand {
         page.insertLine(targetIndex, line);
         plugin.getHologramManager().saveHologram(hologram);
         hologram.refreshViewers();
+        plugin.getHologramManager().restartRefreshTask();
         MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString(after ? "insertafter-success" : "insertbefore-success")
                 .replace("<hologram_id>", hologram.getId())
                 .replace("<page_number>", String.valueOf(pageNumber))
@@ -914,6 +915,7 @@ public class HologramCommand implements BasicCommand {
         page.addLine(line);
         plugin.getHologramManager().saveHologram(hologram);
         hologram.refreshViewers();
+        plugin.getHologramManager().restartRefreshTask();
         MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("line-add-success")
                 .replace("<hologram_id>", hologram.getId())
                 .replace("<page_number>", String.valueOf(pageNumber)));
@@ -942,6 +944,7 @@ public class HologramCommand implements BasicCommand {
         page.removeLine(lineIndex);
         plugin.getHologramManager().saveHologram(hologram);
         hologram.refreshViewers();
+        plugin.getHologramManager().restartRefreshTask();
         MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("line-remove-success")
                 .replace("<hologram_id>", hologram.getId())
                 .replace("<page_number>", String.valueOf(pageNumber))
@@ -974,6 +977,7 @@ public class HologramCommand implements BasicCommand {
         }
         plugin.getHologramManager().saveHologram(hologram);
         hologram.refreshViewers();
+        plugin.getHologramManager().restartRefreshTask();
         MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("line-set-success")
                 .replace("<hologram_id>", hologram.getId())
                 .replace("<page_number>", String.valueOf(pageNumber))
@@ -2050,6 +2054,7 @@ public class HologramCommand implements BasicCommand {
 
         plugin.getHologramManager().saveHologram(hologram);
         hologram.refreshViewers();
+        plugin.getHologramManager().restartRefreshTask();
     }
 
     private void sendInvalidContentMessage(CommandSender sender, LineType type, String content) {

@@ -282,6 +282,25 @@ Si esta instalado y habilitado en config:
 
 Otros plugins pueden usar la API con `AxoHologram.getAPI()` o mediante `ServicesManager`.
 
+Ejemplo para heads dinamicas desde API:
+
+```java
+AxoHologramAPI api = AxoHologram.getAPI();
+
+api.createItemHologram(
+        "player_head",
+        location,
+        "#ITEM:PLAYER_HEAD(%player_name%)"
+);
+
+api.addItemLine(
+        "player_head",
+        "#ITEM:PLAYER_HEAD(%player_uuid%)"
+);
+```
+
+`PLAYER_HEAD(...)` acepta nombre, UUID, `base64:`/`value:`, URL de textura y hash de textura.
+
 Dependencia Maven recomendada si publicas AxoHologram en JitPack:
 
 ```xml

@@ -163,6 +163,9 @@ final class ImportParserUtil {
         for (String prefix : List.of("#icon:", "icon:", "#item:", "item:", "[item]:", "[icon]:", "[item]", "[icon]")) {
             if (normalized.startsWith(prefix)) {
                 String material = line.substring(prefix.length()).trim();
+                if (isPlayerHeadWithIdentifier(material)) {
+                    return new SourceLine(LineType.ITEM, material, null, null, new Vector(), null, null, null);
+                }
                 ItemStack itemStack = new ItemStack(readItemMaterial(material));
                 return new SourceLine(LineType.ITEM, itemStack.getType().name(), itemStack, null, new Vector(), null, null, null);
             }
@@ -264,7 +267,32 @@ final class ImportParserUtil {
             return "";
         }
         String normalized = raw.trim();
-        return normalized.startsWith("minecraft:") ? normalized.substring("minecraft:".length()) : normalized;
+        return normalized.regionMatches(true, 0, "minecraft:", 0, "minecraft:".length())
+                ? normalized.substring("minecraft:".length())
+                : normalized;
+    }
+
+    static boolean isPlayerHeadWithIdentifier(String raw) {
+        if (raw == null) {
+            return false;
+        }
+
+        String normalized = normalizeNamespaced(stripItemPrefix(raw)).toLowerCase(Locale.ROOT);
+        return normalized.startsWith("player_head(") && normalized.endsWith(")");
+    }
+
+    static String stripItemPrefix(String raw) {
+        if (raw == null) {
+            return null;
+        }
+
+        String trimmed = raw.trim();
+        for (String prefix : List.of("#item:", "item:", "#icon:", "icon:", "[item]:", "[icon]:", "[item]", "[icon]")) {
+            if (trimmed.regionMatches(true, 0, prefix, 0, prefix.length())) {
+                return trimmed.substring(prefix.length()).trim();
+            }
+        }
+        return trimmed;
     }
 
     private static Object firstPresent(Map<?, ?> map, String... keys) {

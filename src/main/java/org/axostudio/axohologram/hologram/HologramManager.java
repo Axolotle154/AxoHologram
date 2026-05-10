@@ -8,6 +8,7 @@ import org.axostudio.axohologram.hologram.factory.HologramFactory;
 import org.axostudio.axohologram.hologram.impl.AxoHologramImpl;
 import org.axostudio.axohologram.hologram.line.HologramLine;
 import org.axostudio.axohologram.hologram.line.LineType;
+import org.axostudio.axohologram.hologram.line.impl.ItemLineImpl;
 import org.axostudio.axohologram.hologram.line.impl.TextLineImpl;
 import org.axostudio.axohologram.hologram.page.HologramPage;
 import org.axostudio.axohologram.hologram.page.impl.AxoHologramPageImpl;
@@ -153,6 +154,17 @@ public class HologramManager {
         return hologram;
     }
 
+    public Hologram createItemHologram(String id, Location location, String itemContent, boolean persistent) {
+        ItemLineImpl itemLine = new ItemLineImpl(itemContent, plugin);
+        Hologram hologram = createHologram(id, LineType.ITEM, location, persistent);
+        if (hologram == null) {
+            return null;
+        }
+
+        setLines(hologram, List.of(itemLine));
+        return hologram;
+    }
+
     public boolean deleteHologram(String id) {
         cancelTemporaryRemoval(id);
         Hologram hologram = holograms.remove(id);
@@ -261,6 +273,14 @@ public class HologramManager {
         addTextLine(hologram, line);
     }
 
+    public void setItemLine(Hologram hologram, String itemContent) {
+        setLines(hologram, List.of(new ItemLineImpl(itemContent, plugin)));
+    }
+
+    public void addItemLine(Hologram hologram, String itemContent) {
+        addLine(hologram, new ItemLineImpl(itemContent, plugin));
+    }
+
     public void addTextLines(Hologram hologram, Collection<String> lines) {
         if (hologram == null || lines == null || lines.isEmpty()) {
             return;
@@ -275,6 +295,30 @@ public class HologramManager {
 
     public void addLines(Hologram hologram, List<String> lines) {
         addTextLines(hologram, lines);
+    }
+
+    public void setLines(Hologram hologram, Collection<? extends HologramLine> lines) {
+        if (hologram == null || lines == null) {
+            return;
+        }
+
+        HologramPage page = getOrCreateFirstPage(hologram);
+        if (page == null) {
+            return;
+        }
+
+        while (!page.getLines().isEmpty()) {
+            page.removeLine(0);
+        }
+        for (HologramLine line : lines) {
+            if (line != null) {
+                page.addLine(line);
+            }
+        }
+
+        saveHologram(hologram);
+        hologram.refreshViewers();
+        restartRefreshTask();
     }
 
     public void addLine(Hologram hologram, HologramLine line) {

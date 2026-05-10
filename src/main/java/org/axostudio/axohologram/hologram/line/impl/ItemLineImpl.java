@@ -1,25 +1,46 @@
 package org.axostudio.axohologram.hologram.line.impl;
 
+import com.destroystokyo.paper.profile.PlayerProfile;
+import com.destroystokyo.paper.profile.ProfileProperty;
 import org.axostudio.axohologram.AxoHologram;
 import org.axostudio.axohologram.hologram.Hologram;
 import org.axostudio.axohologram.hologram.billboard.Billboard;
 import org.axostudio.axohologram.hologram.line.HologramLine;
 import org.axostudio.axohologram.hologram.line.LineType;
 import org.axostudio.axohologram.packet.HologramPacketManager;
+import org.axostudio.axohologram.util.MiniMessageUtil;
+import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.SkullMeta;
 import org.bukkit.util.Vector;
 
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class ItemLineImpl implements HologramLine {
 
+    private static final int HEAD_CACHE_LIMIT = 128;
+    private static final Pattern PLAYER_HEAD_PATTERN = Pattern.compile("(?i)^(?:minecraft:)?player_head\\s*\\((.*)\\)\\s*$");
+    private static final Pattern UUID_WITHOUT_DASHES_PATTERN = Pattern.compile("^[0-9a-fA-F]{32}$");
+    private static final Pattern TEXTURE_HASH_PATTERN = Pattern.compile("^[0-9a-fA-F]{40,}$");
+    private static final Pattern PLAYER_NAME_PATTERN = Pattern.compile("^[A-Za-z0-9_]{3,16}$");
+
     private final AxoHologram plugin;
+    private final Map<String, ItemStack> resolvedHeadCache = new ConcurrentHashMap<>();
+    private final Set<String> warnedHeadValues = ConcurrentHashMap.newKeySet();
+    private volatile String content;
     private volatile ItemStack itemStack;
     private volatile Vector offset;
     private volatile double height;
@@ -30,7 +51,8 @@ public class ItemLineImpl implements HologramLine {
 
     public ItemLineImpl(String content, AxoHologram plugin) {
         this.plugin = plugin;
-        this.itemStack = new ItemStack(parseMaterial(content));
+        this.content = normalizeContent(content);
+        this.itemStack = parseItemStack(this.content, null);
         this.offset = new Vector(0, 0, 0);
         this.height = 0.0D;
         this.heightOverride = false;
@@ -40,11 +62,15 @@ public class ItemLineImpl implements HologramLine {
     }
 
     public String getContent() {
-        return itemStack.getType().name();
+        return content;
     }
 
     public void setContent(String content) {
-        this.itemStack = new ItemStack(parseMaterial(content));
+        String normalizedContent = normalizeContent(content);
+        ItemStack parsedItemStack = parseItemStack(normalizedContent, null);
+        this.content = normalizedContent;
+        this.itemStack = parsedItemStack;
+        clearResolutionState();
     }
 
     public ItemStack getItemStack() {
@@ -53,6 +79,13 @@ public class ItemLineImpl implements HologramLine {
 
     public void setItemStack(ItemStack itemStack) {
         this.itemStack = normalizeItemStack(itemStack);
+        this.content = this.itemStack.getType().name();
+        clearResolutionState();
+    }
+
+    public boolean requiresDynamicRefresh() {
+        String headIdentifier = extractPlayerHeadIdentifier(content);
+        return headIdentifier != null && MiniMessageUtil.hasDynamicPlaceholders(headIdentifier);
     }
 
     @Override
@@ -125,12 +158,12 @@ public class ItemLineImpl implements HologramLine {
 
     @Override
     public void spawn(Player player, Hologram hologram, int pageIndex, int lineIndex, Location location, Billboard billboard) {
-        HologramPacketManager.spawnItemLine(player, hologram, pageIndex, lineIndex, location, getItemStack(), billboard);
+        HologramPacketManager.spawnItemLine(player, hologram, pageIndex, lineIndex, location, resolveItemStack(player, hologram, lineIndex), billboard);
     }
 
     @Override
     public void update(Player player, Hologram hologram, int pageIndex, int lineIndex, Location location, Billboard billboard) {
-        HologramPacketManager.updateItemLine(player, hologram, pageIndex, lineIndex, location, getItemStack(), billboard);
+        HologramPacketManager.updateItemLine(player, hologram, pageIndex, lineIndex, location, resolveItemStack(player, hologram, lineIndex), billboard);
     }
 
     @Override
@@ -141,7 +174,7 @@ public class ItemLineImpl implements HologramLine {
     @Override
     public void serialize(ConfigurationSection section) {
         section.set("type", getType().name());
-        section.set("content", itemStack.getType().name());
+        section.set("content", content);
         section.set("item", isSimpleItemStack(itemStack) ? null : itemStack);
         ConfigurationSection offsetSection = section.createSection("offset");
         offsetSection.set("x", offset.getX());
@@ -162,10 +195,10 @@ public class ItemLineImpl implements HologramLine {
 
     public static ItemLineImpl deserialize(ConfigurationSection section, AxoHologram plugin) {
         ItemStack stack = readItemStack(section);
-        String content = stack == null ? section.getString("content", "") : stack.getType().name();
+        String content = section.getString("content", stack == null ? "" : stack.getType().name());
         ItemLineImpl line = new ItemLineImpl(content, plugin);
         if (stack != null) {
-            line.setItemStack(stack);
+            line.itemStack = normalizeItemStack(stack);
         }
 
         Vector offset = readOffset(section);
@@ -182,6 +215,244 @@ public class ItemLineImpl implements HologramLine {
         }
         line.setPermission(section.getString("permission"));
         return line;
+    }
+
+    private ItemStack resolveItemStack(Player player, Hologram hologram, int lineIndex) {
+        if (!requiresDynamicRefresh()) {
+            return getItemStack();
+        }
+
+        try {
+            return parseItemStack(content, player);
+        } catch (IllegalArgumentException exception) {
+            warnInvalidDynamicHead(hologram, lineIndex, exception.getMessage());
+            return itemStack.clone();
+        }
+    }
+
+    private void warnInvalidDynamicHead(Hologram hologram, int lineIndex, String reason) {
+        String key = content + "|" + reason;
+        if (!warnedHeadValues.add(key)) {
+            return;
+        }
+
+        String hologramId = hologram == null ? "unknown" : hologram.getId();
+        int displayLine = lineIndex + 1;
+        plugin.getLogger().warning("Invalid PLAYER_HEAD placeholder result in hologram '" + hologramId
+                + "', line " + displayLine + ": " + reason);
+    }
+
+    private void clearResolutionState() {
+        resolvedHeadCache.clear();
+        warnedHeadValues.clear();
+    }
+
+    private ItemStack parseItemStack(String rawContent, Player player) {
+        String itemContent = stripItemPrefix(rawContent);
+        String headIdentifier = extractPlayerHeadIdentifier(itemContent);
+        if (headIdentifier != null) {
+            return createPlayerHead(headIdentifier, player);
+        }
+        return new ItemStack(parseMaterial(itemContent));
+    }
+
+    private ItemStack createPlayerHead(String rawIdentifier, Player player) {
+        if (rawIdentifier == null || rawIdentifier.isBlank()) {
+            throw new IllegalArgumentException("PLAYER_HEAD identifier cannot be empty.");
+        }
+        if (player == null && MiniMessageUtil.hasDynamicPlaceholders(rawIdentifier)) {
+            return new ItemStack(Material.PLAYER_HEAD);
+        }
+
+        String resolvedIdentifier = player == null
+                ? rawIdentifier.trim()
+                : MiniMessageUtil.resolvePlaceholders(rawIdentifier, player).trim();
+        if (resolvedIdentifier.isEmpty()) {
+            throw new IllegalArgumentException("PLAYER_HEAD placeholder returned an empty value.");
+        }
+
+        if (resolvedHeadCache.size() > HEAD_CACHE_LIMIT) {
+            resolvedHeadCache.clear();
+        }
+        return resolvedHeadCache.computeIfAbsent(resolvedIdentifier, value -> createResolvedPlayerHead(value, player)).clone();
+    }
+
+    private static ItemStack createResolvedPlayerHead(String identifier, Player viewer) {
+        ItemStack stack = new ItemStack(Material.PLAYER_HEAD);
+        if (!(stack.getItemMeta() instanceof SkullMeta skullMeta)) {
+            return stack;
+        }
+
+        String textureValue = explicitTextureValue(identifier);
+        if (textureValue != null) {
+            applyTextureValue(skullMeta, textureValue);
+            stack.setItemMeta(skullMeta);
+            return stack;
+        }
+
+        UUID uuid = parseUuid(identifier);
+        if (uuid != null) {
+            skullMeta.setPlayerProfile(resolveUuidProfile(uuid, viewer));
+            stack.setItemMeta(skullMeta);
+            return stack;
+        }
+
+        if (PLAYER_NAME_PATTERN.matcher(identifier).matches()) {
+            skullMeta.setPlayerProfile(resolveNameProfile(identifier, viewer));
+            stack.setItemMeta(skullMeta);
+            return stack;
+        }
+
+        textureValue = implicitTextureValue(identifier);
+        if (textureValue != null) {
+            applyTextureValue(skullMeta, textureValue);
+            stack.setItemMeta(skullMeta);
+            return stack;
+        }
+
+        throw new IllegalArgumentException("Unsupported PLAYER_HEAD identifier: " + identifier);
+    }
+
+    private static void applyTextureValue(SkullMeta skullMeta, String textureValue) {
+        PlayerProfile profile = Bukkit.createProfile(UUID.nameUUIDFromBytes(("axohologram:" + textureValue).getBytes(StandardCharsets.UTF_8)));
+        profile.setProperty(new ProfileProperty("textures", textureValue));
+        skullMeta.setPlayerProfile(profile);
+    }
+
+    private static PlayerProfile resolveUuidProfile(UUID uuid, Player viewer) {
+        if (viewer != null && viewer.getUniqueId().equals(uuid)) {
+            return viewer.getPlayerProfile();
+        }
+
+        Player onlinePlayer = Bukkit.getPlayer(uuid);
+        if (onlinePlayer != null) {
+            return onlinePlayer.getPlayerProfile();
+        }
+
+        PlayerProfile profile = Bukkit.createProfile(uuid);
+        profile.completeFromCache(false, false);
+        return profile;
+    }
+
+    private static PlayerProfile resolveNameProfile(String name, Player viewer) {
+        if (viewer != null && viewer.getName().equalsIgnoreCase(name)) {
+            return viewer.getPlayerProfile();
+        }
+
+        Player onlinePlayer = Bukkit.getPlayerExact(name);
+        if (onlinePlayer != null) {
+            return onlinePlayer.getPlayerProfile();
+        }
+
+        PlayerProfile profile = Bukkit.createProfile(name);
+        profile.completeFromCache(false, false);
+        return profile;
+    }
+
+    private static String explicitTextureValue(String identifier) {
+        String trimmed = identifier.trim();
+        for (String prefix : new String[]{"base64:", "value:", "texture:", "textures:", "skin:"}) {
+            if (trimmed.regionMatches(true, 0, prefix, 0, prefix.length())) {
+                return normalizeTextureValue(trimmed.substring(prefix.length()).trim());
+            }
+        }
+        if (trimmed.regionMatches(true, 0, "url:", 0, "url:".length())) {
+            return textureUrlToValue(trimmed.substring("url:".length()).trim());
+        }
+        return null;
+    }
+
+    private static String implicitTextureValue(String identifier) {
+        String trimmed = identifier.trim();
+        if (isTextureUrl(trimmed)) {
+            return textureUrlToValue(trimmed);
+        }
+        if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+            return encodeTextureJson(trimmed);
+        }
+        if (isBase64TextureValue(trimmed)) {
+            return trimmed;
+        }
+        if (TEXTURE_HASH_PATTERN.matcher(trimmed).matches()) {
+            return textureUrlToValue("https://textures.minecraft.net/texture/" + trimmed);
+        }
+        return null;
+    }
+
+    private static String normalizeTextureValue(String value) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException("PLAYER_HEAD texture value cannot be empty.");
+        }
+
+        String trimmed = value.trim();
+        if (isTextureUrl(trimmed)) {
+            return textureUrlToValue(trimmed);
+        }
+        if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+            return encodeTextureJson(trimmed);
+        }
+        if (TEXTURE_HASH_PATTERN.matcher(trimmed).matches()) {
+            return textureUrlToValue("https://textures.minecraft.net/texture/" + trimmed);
+        }
+        if (!isBase64TextureValue(trimmed)) {
+            throw new IllegalArgumentException("Invalid PLAYER_HEAD texture value.");
+        }
+        return trimmed;
+    }
+
+    private static String textureUrlToValue(String rawUrl) {
+        String url = rawUrl.startsWith("http://") || rawUrl.startsWith("https://")
+                ? rawUrl
+                : "https://" + rawUrl;
+        if (!isTextureUrl(url)) {
+            throw new IllegalArgumentException("Invalid PLAYER_HEAD texture URL.");
+        }
+        return encodeTextureJson("{\"textures\":{\"SKIN\":{\"url\":\"" + url + "\"}}}");
+    }
+
+    private static String encodeTextureJson(String json) {
+        return Base64.getEncoder().encodeToString(json.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static boolean isBase64TextureValue(String value) {
+        try {
+            String decoded = new String(Base64.getDecoder().decode(value), StandardCharsets.UTF_8).toLowerCase(Locale.ROOT);
+            return decoded.contains("\"textures\"") && decoded.contains("\"skin\"");
+        } catch (IllegalArgumentException exception) {
+            return false;
+        }
+    }
+
+    private static boolean isTextureUrl(String value) {
+        String normalized = value.toLowerCase(Locale.ROOT);
+        return normalized.startsWith("http://textures.minecraft.net/texture/")
+                || normalized.startsWith("https://textures.minecraft.net/texture/")
+                || normalized.startsWith("textures.minecraft.net/texture/");
+    }
+
+    private static UUID parseUuid(String value) {
+        String trimmed = value.trim();
+        try {
+            if (UUID_WITHOUT_DASHES_PATTERN.matcher(trimmed).matches()) {
+                trimmed = trimmed.substring(0, 8) + "-"
+                        + trimmed.substring(8, 12) + "-"
+                        + trimmed.substring(12, 16) + "-"
+                        + trimmed.substring(16, 20) + "-"
+                        + trimmed.substring(20);
+            }
+            return UUID.fromString(trimmed);
+        } catch (IllegalArgumentException exception) {
+            return null;
+        }
+    }
+
+    private static String extractPlayerHeadIdentifier(String rawContent) {
+        String itemContent = stripItemPrefix(rawContent);
+        if (itemContent == null) {
+            return null;
+        }
+        Matcher matcher = PLAYER_HEAD_PATTERN.matcher(itemContent);
+        return matcher.matches() ? matcher.group(1).trim() : null;
     }
 
     private static ItemStack readItemStack(ConfigurationSection section) {
@@ -273,11 +544,14 @@ public class ItemLineImpl implements HologramLine {
     }
 
     private static Material parseMaterial(String content) {
-        if (content == null || content.isBlank()) {
+        String normalized = stripItemPrefix(content);
+        if (normalized == null || normalized.isBlank()) {
             throw new IllegalArgumentException("Item line content cannot be empty.");
         }
 
-        String normalized = content.startsWith("minecraft:") ? content.substring("minecraft:".length()) : content;
+        normalized = normalized.regionMatches(true, 0, "minecraft:", 0, "minecraft:".length())
+                ? normalized.substring("minecraft:".length())
+                : normalized;
         Material material = Material.matchMaterial(normalized);
         if (material == null) {
             material = Material.matchMaterial(normalized.toUpperCase(Locale.ROOT));
@@ -297,5 +571,26 @@ public class ItemLineImpl implements HologramLine {
 
     private static boolean isSimpleItemStack(ItemStack itemStack) {
         return itemStack.getAmount() == 1 && !itemStack.hasItemMeta();
+    }
+
+    private static String normalizeContent(String content) {
+        if (content == null || content.isBlank()) {
+            throw new IllegalArgumentException("Item line content cannot be empty.");
+        }
+        return content.trim();
+    }
+
+    private static String stripItemPrefix(String content) {
+        if (content == null) {
+            return null;
+        }
+
+        String trimmed = content.trim();
+        for (String prefix : new String[]{"#item:", "item:", "#icon:", "icon:", "[item]:", "[icon]:", "[item]", "[icon]"}) {
+            if (trimmed.regionMatches(true, 0, prefix, 0, prefix.length())) {
+                return trimmed.substring(prefix.length()).trim();
+            }
+        }
+        return trimmed;
     }
 }
