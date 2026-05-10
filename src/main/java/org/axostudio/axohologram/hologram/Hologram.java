@@ -2,6 +2,7 @@ package org.axostudio.axohologram.hologram;
 
 import org.axostudio.axohologram.hologram.action.HologramAction;
 import org.axostudio.axohologram.hologram.action.HologramClickType;
+import org.axostudio.axohologram.hologram.line.HologramLine;
 import org.axostudio.axohologram.hologram.page.HologramPage;
 import org.axostudio.axohologram.hologram.billboard.Billboard;
 import org.axostudio.axohologram.hologram.visibility.VisibilityMode;
@@ -12,6 +13,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.entity.TextDisplay;
 import org.bukkit.util.Vector;
 
+import java.util.Collection;
 import java.util.List;
 
 public interface Hologram {
@@ -33,6 +35,12 @@ public interface Hologram {
     HologramPage getPage(int index);
     void addPage(HologramPage page);
     void removePage(int index);
+    void addLine(String line);
+    void addLine(HologramLine line);
+    void addLines(List<String> lines);
+    void addLines(Collection<? extends HologramLine> lines);
+    void addTextLine(String line);
+    void addTextLines(Collection<String> lines);
     int getDefaultPageIndex();
     void setDefaultPageIndex(int index);
 
@@ -44,6 +52,9 @@ public interface Hologram {
     void setViewDistance(int viewDistance);
     float getScale();
     void setScale(float scale);
+    double getHeight();
+    double getHeight(int pageIndex);
+    double getLineHeight(HologramLine line);
 
     default float getScaleX() {
         return getScale();

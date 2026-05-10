@@ -29,6 +29,7 @@ import org.bukkit.entity.TextDisplay;
 import org.bukkit.util.Vector;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -215,6 +216,36 @@ public class AxoHologramImpl implements Hologram {
     }
 
     @Override
+    public void addLine(String line) {
+        addTextLine(line);
+    }
+
+    @Override
+    public void addLine(HologramLine line) {
+        plugin.getHologramManager().addLine(this, line);
+    }
+
+    @Override
+    public void addLines(List<String> lines) {
+        addTextLines(lines);
+    }
+
+    @Override
+    public void addLines(Collection<? extends HologramLine> lines) {
+        plugin.getHologramManager().addLines(this, lines);
+    }
+
+    @Override
+    public void addTextLine(String line) {
+        plugin.getHologramManager().addTextLine(this, line);
+    }
+
+    @Override
+    public void addTextLines(Collection<String> lines) {
+        plugin.getHologramManager().addTextLines(this, lines);
+    }
+
+    @Override
     public int getDefaultPageIndex() {
         return defaultPageIndex;
     }
@@ -289,6 +320,21 @@ public class AxoHologramImpl implements Hologram {
         this.scaleZ = normalized;
         plugin.getHologramManager().saveHologram(this);
         refreshViewers();
+    }
+
+    @Override
+    public double getHeight() {
+        return plugin.getHologramManager().getHeight(this);
+    }
+
+    @Override
+    public double getHeight(int pageIndex) {
+        return plugin.getHologramManager().getHeight(this, pageIndex);
+    }
+
+    @Override
+    public double getLineHeight(HologramLine line) {
+        return plugin.getHologramManager().resolveLineHeight(this, line);
     }
 
     @Override
@@ -728,7 +774,6 @@ public class AxoHologramImpl implements Hologram {
             return HologramPacketManager.updateLineDisplayState(player, this, pageIndex, -1, baseLocation, billboard);
         }
 
-        double lineSpacing = plugin.getConfigManager().getConfig().getDouble("general.defaults.line-spacing", 0.25D);
         double currentYOffset = 0.0D;
         boolean updatedAllLines = true;
         for (int lineIndex = 0; lineIndex < page.getLines().size(); lineIndex++) {
@@ -746,7 +791,7 @@ public class AxoHologramImpl implements Hologram {
                     line.getOffset().getZ()
             );
             updatedAllLines &= HologramPacketManager.updateLineDisplayState(player, this, pageIndex, lineIndex, lineLocation, effectiveBillboard);
-            currentYOffset -= resolveLineStep(line, nextVisibleLine, lineSpacing);
+            currentYOffset -= plugin.getHologramManager().resolveLineStep(this, line, nextVisibleLine);
         }
         return updatedAllLines;
     }
@@ -1065,8 +1110,6 @@ public class AxoHologramImpl implements Hologram {
 
         Location baseLocation = getLocation().add(offset);
         if (!updateExisting || data.isDirty() || data.isPageContentDirty(pageIndex, page)) {
-            double lineSpacing = plugin.getConfigManager().getConfig().getDouble("general.defaults.line-spacing", 0.25D);
-
             if (isSimpleTextPage(page)) {
                 renderSimpleTextPage(player, page, pageIndex, baseLocation, updateExisting);
             } else {
@@ -1092,7 +1135,7 @@ public class AxoHologramImpl implements Hologram {
                         line.spawn(player, this, pageIndex, lineIndex, lineLocation, effectiveBillboard);
                     }
                     visibleLines.put(lineIndex, line);
-                    currentYOffset -= resolveLineStep(line, nextVisibleLine, lineSpacing);
+                    currentYOffset -= plugin.getHologramManager().resolveLineStep(this, line, nextVisibleLine);
                 }
 
                 HologramPacketManager.destroyLinesExcept(player, id, pageIndex, visibleLines.keySet());
@@ -1112,35 +1155,6 @@ public class AxoHologramImpl implements Hologram {
             }
         }
         return null;
-    }
-
-    private double resolveLineStep(HologramLine line, HologramLine nextLine, double textLineSpacing) {
-        double step = resolveLineHeight(line, textLineSpacing);
-        if (nextLine != null && !line.hasHeightOverride() && !nextLine.hasHeightOverride()) {
-            step = Math.max(step, resolveLineHeight(nextLine, textLineSpacing));
-        }
-        return step;
-    }
-
-    private double resolveLineHeight(HologramLine line, double textLineSpacing) {
-        if (line == null) {
-            return textLineSpacing;
-        }
-        if (line.hasHeightOverride()) {
-            return Math.max(0.0D, line.getHeight());
-        }
-
-        return switch (line.getType()) {
-            case ITEM -> resolveDefaultDisplayLineHeight("general.defaults.item-line-height", 0.65D, textLineSpacing);
-            case BLOCK -> resolveDefaultDisplayLineHeight("general.defaults.block-line-height", 1.0D, textLineSpacing);
-            case TEXT -> textLineSpacing;
-        };
-    }
-
-    private double resolveDefaultDisplayLineHeight(String path, double fallback, double textLineSpacing) {
-        double configured = Math.max(0.0D, plugin.getConfigManager().getConfig().getDouble(path, fallback));
-        double scaledHeight = configured * Math.max(0.01D, scale);
-        return Math.max(textLineSpacing, scaledHeight);
     }
 
     private void renderSimpleTextPage(Player player, HologramPage page, int pageIndex, Location baseLocation, boolean updateExisting) {

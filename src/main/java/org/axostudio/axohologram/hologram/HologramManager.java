@@ -6,6 +6,7 @@ import com.google.common.collect.Multimaps;
 import org.axostudio.axohologram.AxoHologram;
 import org.axostudio.axohologram.hologram.factory.HologramFactory;
 import org.axostudio.axohologram.hologram.impl.AxoHologramImpl;
+import org.axostudio.axohologram.hologram.line.HologramLine;
 import org.axostudio.axohologram.hologram.line.LineType;
 import org.axostudio.axohologram.hologram.line.impl.TextLineImpl;
 import org.axostudio.axohologram.hologram.page.HologramPage;
@@ -21,6 +22,7 @@ import org.bukkit.entity.Player;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
@@ -234,10 +236,9 @@ public class HologramManager {
             return;
         }
 
-        HologramPage page = hologram.getPage(0);
+        HologramPage page = getOrCreateFirstPage(hologram);
         if (page == null) {
-            page = new AxoHologramPageImpl();
-            hologram.addPage(page);
+            return;
         }
 
         while (!page.getLines().isEmpty()) {
@@ -250,6 +251,141 @@ public class HologramManager {
         saveHologram(hologram);
         hologram.refreshViewers();
         restartRefreshTask();
+    }
+
+    public void addTextLine(Hologram hologram, String line) {
+        addTextLines(hologram, List.of(line == null ? "" : line));
+    }
+
+    public void addLine(Hologram hologram, String line) {
+        addTextLine(hologram, line);
+    }
+
+    public void addTextLines(Hologram hologram, Collection<String> lines) {
+        if (hologram == null || lines == null || lines.isEmpty()) {
+            return;
+        }
+
+        List<HologramLine> textLines = new ArrayList<>(lines.size());
+        for (String line : lines) {
+            textLines.add(new TextLineImpl(line == null ? "" : line, plugin));
+        }
+        addLines(hologram, textLines);
+    }
+
+    public void addLines(Hologram hologram, List<String> lines) {
+        addTextLines(hologram, lines);
+    }
+
+    public void addLine(Hologram hologram, HologramLine line) {
+        if (line == null) {
+            return;
+        }
+        addLines(hologram, List.of(line));
+    }
+
+    public void addLines(Hologram hologram, Collection<? extends HologramLine> lines) {
+        if (hologram == null || lines == null || lines.isEmpty()) {
+            return;
+        }
+
+        HologramPage page = getOrCreateFirstPage(hologram);
+        if (page == null) {
+            return;
+        }
+
+        boolean added = false;
+        for (HologramLine line : lines) {
+            if (line == null) {
+                continue;
+            }
+            page.addLine(line);
+            added = true;
+        }
+
+        if (!added) {
+            return;
+        }
+
+        saveHologram(hologram);
+        hologram.refreshViewers();
+        restartRefreshTask();
+    }
+
+    public double getHeight(Hologram hologram) {
+        if (hologram == null) {
+            return 0.0D;
+        }
+        return getHeight(hologram, hologram.getDefaultPageIndex());
+    }
+
+    public double getHeight(Hologram hologram, int pageIndex) {
+        if (hologram == null) {
+            return 0.0D;
+        }
+
+        HologramPage page = hologram.getPage(pageIndex);
+        if (page == null || page.getLines().isEmpty()) {
+            return 0.0D;
+        }
+
+        List<HologramLine> lines = page.getLines();
+        double height = 0.0D;
+        for (int lineIndex = 0; lineIndex < lines.size(); lineIndex++) {
+            HologramLine line = lines.get(lineIndex);
+            HologramLine nextLine = lineIndex + 1 < lines.size() ? lines.get(lineIndex + 1) : null;
+            height += nextLine == null
+                    ? resolveLineHeight(hologram, line)
+                    : resolveLineStep(hologram, line, nextLine);
+        }
+        return height;
+    }
+
+    public double resolveLineStep(Hologram hologram, HologramLine line, HologramLine nextLine) {
+        double textLineSpacing = plugin.getConfigManager().getConfig().getDouble("general.defaults.line-spacing", 0.25D);
+        double step = resolveLineHeight(hologram, line, textLineSpacing);
+        if (line != null && nextLine != null && !line.hasHeightOverride() && !nextLine.hasHeightOverride()) {
+            step = Math.max(step, resolveLineHeight(hologram, nextLine, textLineSpacing));
+        }
+        return step;
+    }
+
+    public double resolveLineHeight(Hologram hologram, HologramLine line) {
+        double textLineSpacing = plugin.getConfigManager().getConfig().getDouble("general.defaults.line-spacing", 0.25D);
+        return resolveLineHeight(hologram, line, textLineSpacing);
+    }
+
+    private double resolveLineHeight(Hologram hologram, HologramLine line, double textLineSpacing) {
+        if (line == null) {
+            return textLineSpacing;
+        }
+        if (line.hasHeightOverride()) {
+            return Math.max(0.0D, line.getHeight());
+        }
+
+        return switch (line.getType()) {
+            case ITEM -> resolveDefaultDisplayLineHeight(hologram, "general.defaults.item-line-height", 0.65D, textLineSpacing);
+            case BLOCK -> resolveDefaultDisplayLineHeight(hologram, "general.defaults.block-line-height", 1.0D, textLineSpacing);
+            case TEXT -> textLineSpacing;
+        };
+    }
+
+    private double resolveDefaultDisplayLineHeight(Hologram hologram, String path, double fallback, double textLineSpacing) {
+        double configured = Math.max(0.0D, plugin.getConfigManager().getConfig().getDouble(path, fallback));
+        double scale = hologram == null ? 1.0D : Math.max(0.01D, hologram.getScale());
+        double scaledHeight = configured * scale;
+        return Math.max(textLineSpacing, scaledHeight);
+    }
+
+    private HologramPage getOrCreateFirstPage(Hologram hologram) {
+        HologramPage page = hologram.getPage(0);
+        if (page != null) {
+            return page;
+        }
+
+        page = new AxoHologramPageImpl();
+        hologram.addPage(page);
+        return page;
     }
 
     public void scheduleTemporaryRemoval(String id, long durationTicks) {

@@ -2,6 +2,7 @@ package org.axostudio.axohologram.api;
 
 import org.axostudio.axohologram.AxoHologram;
 import org.axostudio.axohologram.hologram.Hologram;
+import org.axostudio.axohologram.hologram.line.HologramLine;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
@@ -71,6 +72,11 @@ public final class AxoHologramProvider implements AxoHologramAPI {
     }
 
     @Override
+    public boolean deleteHologram(Hologram hologram) {
+        return plugin.getHologramManager().deleteHologram(requireHologram(hologram).getId());
+    }
+
+    @Override
     public boolean exists(String id) {
         return plugin.getHologramManager().getHologram(validateId(id)) != null;
     }
@@ -92,25 +98,141 @@ public final class AxoHologramProvider implements AxoHologramAPI {
     }
 
     @Override
+    public void updateLines(Hologram hologram, List<String> lines) {
+        validateLines(lines);
+        plugin.getHologramManager().setTextLines(requireHologram(hologram), List.copyOf(lines));
+    }
+
+    @Override
+    public void addLine(String id, String line) {
+        addTextLine(id, line);
+    }
+
+    @Override
+    public void addLine(Hologram hologram, String line) {
+        addTextLine(hologram, line);
+    }
+
+    @Override
+    public void addLines(String id, List<String> lines) {
+        addTextLines(id, lines);
+    }
+
+    @Override
+    public void addLines(Hologram hologram, List<String> lines) {
+        addTextLines(hologram, lines);
+    }
+
+    @Override
+    public void addTextLine(String id, String line) {
+        validateLine(line);
+        plugin.getHologramManager().addTextLine(requireHologram(id), line);
+    }
+
+    @Override
+    public void addTextLine(Hologram hologram, String line) {
+        validateLine(line);
+        plugin.getHologramManager().addTextLine(requireHologram(hologram), line);
+    }
+
+    @Override
+    public void addTextLines(String id, List<String> lines) {
+        validateLines(lines);
+        plugin.getHologramManager().addTextLines(requireHologram(id), List.copyOf(lines));
+    }
+
+    @Override
+    public void addTextLines(Hologram hologram, List<String> lines) {
+        validateLines(lines);
+        plugin.getHologramManager().addTextLines(requireHologram(hologram), List.copyOf(lines));
+    }
+
+    @Override
+    public void addLine(String id, HologramLine line) {
+        validateHologramLine(line);
+        plugin.getHologramManager().addLine(requireHologram(id), line);
+    }
+
+    @Override
+    public void addLine(Hologram hologram, HologramLine line) {
+        validateHologramLine(line);
+        plugin.getHologramManager().addLine(requireHologram(hologram), line);
+    }
+
+    @Override
+    public void addLines(String id, Collection<? extends HologramLine> lines) {
+        validateHologramLines(lines);
+        plugin.getHologramManager().addLines(requireHologram(id), List.copyOf(lines));
+    }
+
+    @Override
+    public void addLines(Hologram hologram, Collection<? extends HologramLine> lines) {
+        validateHologramLines(lines);
+        plugin.getHologramManager().addLines(requireHologram(hologram), List.copyOf(lines));
+    }
+
+    @Override
+    public double getHeight(String id) {
+        return plugin.getHologramManager().getHeight(requireHologram(id));
+    }
+
+    @Override
+    public double getHeight(String id, int pageIndex) {
+        return plugin.getHologramManager().getHeight(requireHologram(id), pageIndex);
+    }
+
+    @Override
+    public double getHeight(Hologram hologram) {
+        return plugin.getHologramManager().getHeight(requireHologram(hologram));
+    }
+
+    @Override
+    public double getHeight(Hologram hologram, int pageIndex) {
+        return plugin.getHologramManager().getHeight(requireHologram(hologram), pageIndex);
+    }
+
+    @Override
+    public double getLineHeight(Hologram hologram, HologramLine line) {
+        validateHologramLine(line);
+        return plugin.getHologramManager().resolveLineHeight(requireHologram(hologram), line);
+    }
+
+    @Override
     public void teleportHologram(String id, Location location) {
         validateLocation(location);
         requireHologram(id).setLocation(location);
     }
 
     @Override
+    public void teleportHologram(Hologram hologram, Location location) {
+        validateLocation(location);
+        requireHologram(hologram).setLocation(location);
+    }
+
+    @Override
     public void showHologram(String id) {
-        Hologram hologram = requireHologram(id);
+        showHologram(requireHologram(id));
+    }
+
+    @Override
+    public void showHologram(Hologram hologram) {
+        Hologram registeredHologram = requireHologram(hologram);
         for (Player player : Bukkit.getOnlinePlayers()) {
-            hologram.show(player);
+            registeredHologram.show(player);
         }
     }
 
     @Override
     public void hideHologram(String id) {
-        Hologram hologram = requireHologram(id);
+        hideHologram(requireHologram(id));
+    }
+
+    @Override
+    public void hideHologram(Hologram hologram) {
+        Hologram registeredHologram = requireHologram(hologram);
         for (Player player : Bukkit.getOnlinePlayers()) {
-            if (hologram.isViewing(player)) {
-                hologram.hide(player);
+            if (registeredHologram.isViewing(player)) {
+                registeredHologram.hide(player);
             }
         }
     }
@@ -122,6 +244,16 @@ public final class AxoHologramProvider implements AxoHologramAPI {
             throw new IllegalArgumentException("Hologram '" + normalizedId + "' does not exist.");
         }
         return hologram;
+    }
+
+    private Hologram requireHologram(Hologram hologram) {
+        Objects.requireNonNull(hologram, "hologram");
+        String normalizedId = validateId(hologram.getId());
+        Hologram registeredHologram = plugin.getHologramManager().getHologram(normalizedId);
+        if (registeredHologram == null) {
+            throw new IllegalArgumentException("Hologram '" + normalizedId + "' does not exist.");
+        }
+        return registeredHologram;
     }
 
     private void validateCreateInput(String id, Location location, List<String> lines) {
@@ -150,12 +282,27 @@ public final class AxoHologramProvider implements AxoHologramAPI {
         }
     }
 
-    private void validateLines(List<String> lines) {
+    private void validateLines(Collection<String> lines) {
         Objects.requireNonNull(lines, "lines");
         for (String line : lines) {
-            if (line == null) {
-                throw new IllegalArgumentException("Hologram lines cannot contain null values.");
-            }
+            validateLine(line);
+        }
+    }
+
+    private void validateLine(String line) {
+        if (line == null) {
+            throw new IllegalArgumentException("Hologram lines cannot contain null values.");
+        }
+    }
+
+    private void validateHologramLine(HologramLine line) {
+        Objects.requireNonNull(line, "line");
+    }
+
+    private void validateHologramLines(Collection<? extends HologramLine> lines) {
+        Objects.requireNonNull(lines, "lines");
+        for (HologramLine line : lines) {
+            validateHologramLine(line);
         }
     }
 
