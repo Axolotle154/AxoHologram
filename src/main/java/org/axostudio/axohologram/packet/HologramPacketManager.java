@@ -9,6 +9,7 @@ import org.axostudio.axohologram.hologram.action.HologramClickType;
 import org.axostudio.axohologram.hologram.billboard.Billboard;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
+import org.bukkit.Material;
 import org.bukkit.block.data.BlockData;
 import org.bukkit.entity.BlockDisplay;
 import org.bukkit.entity.Display;
@@ -159,7 +160,7 @@ public final class HologramPacketManager {
             }
 
             ItemDisplay display = spawnLocation.getWorld().spawn(spawnLocation, ItemDisplay.class, entity -> {
-                configureDisplay(entity, hologram, spawnLocation, billboard);
+                configureItemDisplay(entity, hologram, spawnLocation, stack, billboard);
                 entity.setItemStack(stack);
             });
 
@@ -194,7 +195,7 @@ public final class HologramPacketManager {
         Location targetLocation = location.clone();
         ItemStack stack = itemStack.clone();
         if (!scheduler().runAtEntity(display, () -> {
-            updateDisplay(display, hologram, targetLocation, billboard);
+            updateItemDisplay(display, hologram, targetLocation, stack, billboard);
             display.setItemStack(stack);
             syncInteraction(viewerId, hologram, pageIndex, lineIndex, targetLocation,
                     resolveDisplayInteractionSize(hologram),
@@ -553,11 +554,19 @@ public final class HologramPacketManager {
     }
 
     private static void configureDisplay(Display display, Hologram hologram, Location location, Billboard billboard) {
+        configureDisplay(display, hologram, location, billboard, false);
+    }
+
+    private static void configureItemDisplay(ItemDisplay display, Hologram hologram, Location location, ItemStack itemStack, Billboard billboard) {
+        configureDisplay(display, hologram, location, billboard, shouldFlipItemModel(itemStack));
+    }
+
+    private static void configureDisplay(Display display, Hologram hologram, Location location, Billboard billboard, boolean flipItemModel) {
         display.setVisibleByDefault(false);
         display.setPersistent(false);
         display.setInvulnerable(true);
         display.setGravity(false);
-        applyDisplayState(display, hologram, location, billboard, true);
+        applyDisplayState(display, hologram, location, billboard, true, flipItemModel);
         display.setInterpolationDelay(0);
     }
 
@@ -565,7 +574,15 @@ public final class HologramPacketManager {
         applyDisplayState(display, hologram, location, billboard, true);
     }
 
+    private static void updateItemDisplay(ItemDisplay display, Hologram hologram, Location location, ItemStack itemStack, Billboard billboard) {
+        applyDisplayState(display, hologram, location, billboard, true, shouldFlipItemModel(itemStack));
+    }
+
     private static void applyDisplayState(Display display, Hologram hologram, Location location, Billboard billboard, boolean allowTeleport) {
+        applyDisplayState(display, hologram, location, billboard, allowTeleport, false);
+    }
+
+    private static void applyDisplayState(Display display, Hologram hologram, Location location, Billboard billboard, boolean allowTeleport, boolean flipItemModel) {
         if (location == null || location.getWorld() == null) {
             return;
         }
@@ -586,7 +603,7 @@ public final class HologramPacketManager {
         display.setViewRange(resolveViewRange(hologram));
         display.setShadowRadius(hologram.getShadowRadius());
         display.setShadowStrength(hologram.getShadowStrength());
-        display.setTransformation(buildTransformation(hologram, renderedAnimation.scaleMultiplier(), renderedAnimation.rollOffset()));
+        display.setTransformation(buildTransformation(hologram, renderedAnimation.scaleMultiplier(), renderedAnimation.rollOffset(), flipItemModel));
 
         if (hologram.getBrightnessBlock() >= 0 || hologram.getBrightnessSky() >= 0) {
             int block = hologram.getBrightnessBlock() >= 0 ? hologram.getBrightnessBlock() : 15;
@@ -757,7 +774,7 @@ public final class HologramPacketManager {
         return Math.max(0.1F, Math.min(value, 32.0F));
     }
 
-    private static Transformation buildTransformation(Hologram hologram, float scaleMultiplier, float rollOffset) {
+    private static Transformation buildTransformation(Hologram hologram, float scaleMultiplier, float rollOffset, boolean flipItemModel) {
         float multiplier = Math.max(0.01F, scaleMultiplier);
         return new Transformation(
                 new Vector3f(0.0F, 0.0F, 0.0F),
@@ -767,8 +784,12 @@ public final class HologramPacketManager {
                         hologram.getScaleY() * multiplier,
                         hologram.getScaleZ() * multiplier
                 ),
-                new Quaternionf()
+                flipItemModel ? new Quaternionf().rotateY((float) Math.PI) : new Quaternionf()
         );
+    }
+
+    private static boolean shouldFlipItemModel(ItemStack itemStack) {
+        return itemStack != null && itemStack.getType() == Material.PLAYER_HEAD;
     }
 
     private static RenderedDisplayAnimation renderDisplayAnimation(Hologram hologram, Location location) {
