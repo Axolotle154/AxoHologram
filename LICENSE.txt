@@ -1,0 +1,11 @@
+Copyright (c) 2026 AxoStudio
+
+Este plugin es propiedad privada.
+Se permite su uso en servidores de Minecraft.
+
+No está permitido:
+- Redistribuir el plugin
+- Modificar o descompilar el código
+- Vender o sublicenciar
+
+Todos los derechos reservados.
