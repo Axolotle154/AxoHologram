@@ -703,7 +703,8 @@ public final class HologramPacketManager {
             display.setDefaultBackground(false);
             display.setBackgroundColor(hologram.getBackgroundColor());
         } else {
-            display.setDefaultBackground(true);
+            display.setDefaultBackground(false);
+            display.setBackgroundColor(null);
         }
     }
 

@@ -882,6 +882,7 @@ public class AxoHologramImpl implements Hologram {
     public void serialize(ConfigurationSection section) {
         Location currentLocation = location.clone();
         Vector currentOffset = offset.clone();
+        boolean compactTextHologram = isCompactTextHologram();
 
         section.set("enabled", enabled ? null : false);
         section.set("location.world", worldName);
@@ -908,14 +909,18 @@ public class AxoHologramImpl implements Hologram {
         section.set("style.text-shadow", textShadow);
         section.set("style.see-through", seeThrough);
         section.set("style.alignment", alignment.name());
-        section.set("text.update-interval", updateTextInterval > 0L ? updateTextInterval : null);
+        if (compactTextHologram) {
+            section.set("update-text-interval", updateTextInterval > 0L ? updateTextInterval : null);
+        } else {
+            section.set("text.update-interval", updateTextInterval > 0L ? updateTextInterval : null);
+        }
         section.set("display-animation-enabled", displayAnimationEnabled);
         section.set("display-animation", displayAnimation);
         section.set("default-page", defaultPageIndex + 1);
         section.set("linked-npc", linkedNpc);
         serializeActions(section);
 
-        if (isSimpleTextHologram()) {
+        if (compactTextHologram) {
             section.set("type", "TEXT");
             section.set("text", collectSimpleText());
             section.set("pages", null);
@@ -1217,10 +1222,33 @@ public class AxoHologramImpl implements Hologram {
         return true;
     }
 
-    private boolean isSimpleTextHologram() {
+    private boolean isCompactTextHologram() {
         return pages.size() == 1
                 && pages.getFirst().getPermission() == null
-                && isSimpleTextPage(pages.getFirst());
+                && isCompactTextPage(pages.getFirst());
+    }
+
+    private boolean isCompactTextPage(HologramPage page) {
+        if (page.getLines().isEmpty()) {
+            return false;
+        }
+
+        for (HologramLine line : page.getLines()) {
+            if (!(line instanceof TextLineImpl textLine)) {
+                return false;
+            }
+            if (textLine.hasBillboardOverride()) {
+                return false;
+            }
+            if (textLine.getPermission() != null && !textLine.getPermission().isBlank()) {
+                return false;
+            }
+            if (textLine.getOffset().getX() != 0.0D || textLine.getOffset().getY() != 0.0D || textLine.getOffset().getZ() != 0.0D) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private boolean isSimpleBlockHologram() {

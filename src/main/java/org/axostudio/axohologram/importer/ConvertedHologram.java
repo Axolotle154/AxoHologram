@@ -111,6 +111,7 @@ public final class ConvertedHologram {
 
     public void serialize(ConfigurationSection section) {
         Location targetLocation = location;
+        boolean compactTextHologram = isCompactTextHologram();
         section.set("enabled", enabled ? null : false);
         section.set("location.world", targetLocation != null && targetLocation.getWorld() != null ? targetLocation.getWorld().getName() : worldName);
         section.set("location.x", targetLocation == null ? 0.0D : targetLocation.getX());
@@ -133,10 +134,21 @@ public final class ConvertedHologram {
         section.set("style.text-shadow", textShadow);
         section.set("style.see-through", seeThrough);
         section.set("style.alignment", alignment.name());
-        section.set("text.update-interval", updateTextInterval > 0L ? updateTextInterval : null);
+        if (compactTextHologram) {
+            section.set("update-text-interval", updateTextInterval > 0L ? updateTextInterval : null);
+        } else {
+            section.set("text.update-interval", updateTextInterval > 0L ? updateTextInterval : null);
+        }
         section.set("display-animation-enabled", displayAnimation != null);
         section.set("display-animation", displayAnimation);
         section.set("default-page", 1);
+
+        if (compactTextHologram) {
+            section.set("type", "TEXT");
+            section.set("text", collectCompactText());
+            section.set("pages", null);
+            return;
+        }
 
         List<Map<String, Object>> serializedPages = new ArrayList<>();
         for (List<ConvertedLine> page : pages) {
@@ -151,6 +163,43 @@ public final class ConvertedHologram {
             serializedPages.add(pageConfig.getValues(false));
         }
         section.set("pages", serializedPages);
+    }
+
+    private boolean isCompactTextHologram() {
+        return pages.size() == 1 && isCompactTextPage(pages.getFirst());
+    }
+
+    private boolean isCompactTextPage(List<ConvertedLine> page) {
+        if (page == null || page.isEmpty()) {
+            return false;
+        }
+
+        for (ConvertedLine line : page) {
+            if (line == null || line.type() != LineType.TEXT) {
+                return false;
+            }
+            Vector lineOffset = line.offset();
+            if (lineOffset.getX() != 0.0D || lineOffset.getY() != 0.0D || lineOffset.getZ() != 0.0D) {
+                return false;
+            }
+            if (line.billboard() != null) {
+                return false;
+            }
+            if (line.permission() != null && !line.permission().isBlank()) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private List<String> collectCompactText() {
+        List<ConvertedLine> page = pages.getFirst();
+        List<String> textLines = new ArrayList<>(page.size());
+        for (ConvertedLine line : page) {
+            textLines.add(line.content() == null ? "" : line.content());
+        }
+        return textLines;
     }
 
     public record ConvertedLine(

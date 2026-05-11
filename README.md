@@ -193,6 +193,7 @@ Soporta:
 - HEX estilo Bungee `&x&F&F&0&0&F&F`
 - Animaciones con `<#ANIM:nombre>texto</#ANIM>`
 - Animaciones con `<anim:nombre>texto</anim:nombre>`
+- Animaciones inline con `<#ANIM:&f:&b&l>texto</#ANIM>`
 
 Ejemplos:
 
@@ -204,6 +205,7 @@ Ejemplos:
 <#ANIM:rainbow>Hello</#ANIM>
 <#ANIM:pulse_blue>Store</#ANIM>
 <anim:wave_aqua>Coins</anim:wave_aqua>
+<#ANIM:&f:&b&l>Hello World</#ANIM>
 ```
 
 ## Animaciones

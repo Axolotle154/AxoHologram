@@ -6,7 +6,7 @@
 
     <groupId>org.axostudio</groupId>
     <artifactId>AxoHologram</artifactId>
-    <version>1.2.0-alpha</version>
+    <version>1.2.2-alpha</version>
     <packaging>jar</packaging>
 
     <name>AxoHologram</name>

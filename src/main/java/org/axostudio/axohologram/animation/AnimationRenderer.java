@@ -14,7 +14,7 @@ public final class AnimationRenderer {
     public static final char PLACEHOLDER_PERCENT_MARKER = '\uE000';
 
     private static final Pattern TEXT_ANIMATION_PATTERN =
-            Pattern.compile("(?is)<\\s*#?(?:anim|animation)\\s*:\\s*([a-zA-Z0-9_-]+)\\s*>(.*?)<\\s*/\\s*#?(?:anim|animation)(?:\\s*:\\s*[a-zA-Z0-9_-]+)?\\s*>");
+            Pattern.compile("(?is)<\\s*#?(?:anim|animation)\\s*:\\s*([^>\\s]+)\\s*>(.*?)<\\s*/\\s*#?(?:anim|animation)(?:\\s*:\\s*[^>\\s]+)?\\s*>");
 
     private final AnimationConfigManager configManager;
     private final AnimationFrameCache frameCache;
@@ -34,9 +34,9 @@ public final class AnimationRenderer {
         Matcher matcher = TEXT_ANIMATION_PATTERN.matcher(input);
         StringBuffer output = new StringBuffer(input.length());
         while (matcher.find()) {
-            String animationName = matcher.group(1);
+            String animationName = matcher.group(1).trim();
             String content = matcher.group(2);
-            TextAnimation animation = configManager.getTextAnimation(animationName).orElse(null);
+            TextAnimation animation = resolveTextAnimation(animationName);
             if (animation == null) {
                 warnMissingTextAnimation(animationName);
                 matcher.appendReplacement(output, Matcher.quoteReplacement(content));
@@ -52,6 +52,37 @@ public final class AnimationRenderer {
         }
         matcher.appendTail(output);
         return output.toString();
+    }
+
+    private TextAnimation resolveTextAnimation(String animationName) {
+        TextAnimation configuredAnimation = configManager.getTextAnimation(animationName).orElse(null);
+        if (configuredAnimation != null) {
+            return configuredAnimation;
+        }
+        return createInlineColorAnimation(animationName);
+    }
+
+    private TextAnimation createInlineColorAnimation(String animationName) {
+        int separatorIndex = animationName.indexOf(':');
+        if (separatorIndex <= 0 || separatorIndex >= animationName.length() - 1) {
+            return null;
+        }
+
+        String color1 = animationName.substring(0, separatorIndex).trim();
+        String color2 = animationName.substring(separatorIndex + 1).trim();
+        if (color1.isEmpty() || color2.isEmpty()) {
+            return null;
+        }
+
+        return new ConfiguredTextAnimation(
+                "inline:" + animationName,
+                "wave",
+                2,
+                null,
+                null,
+                color1,
+                color2
+        );
     }
 
     public RenderedDisplayAnimation renderDisplayAnimation(Hologram hologram, Location baseLocation, long tick) {
