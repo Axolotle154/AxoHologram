@@ -55,6 +55,10 @@ create-next-step-item: "<prefix><gray>Set the item material: <white>/holograma l
 create-next-step-block: "<prefix><gray>Set the block material: <white>/holograma line set <hologram_id> 1 1 GRASS_BLOCK</white></gray>"
 create-fail-exists: "<prefix><red>A hologram with the ID '<hologram_id>' already exists.</red>"
 
+clone-usage: "<prefix><gray>Usage: /holograma clone <source_id> <new_id></gray>"
+clone-success: "<prefix><green>Cloned hologram '<source_hologram_id>' as '<target_hologram_id>'.</green>"
+clone-fail: "<prefix><red>Could not clone hologram '<source_hologram_id>' as '<target_hologram_id>'.</red>"
+
 delete-usage: "<prefix><gray>Usage: /holograma delete <id></gray>"
 delete-success: "<prefix><green>Hologram '<hologram_id>' has been deleted.</green>"
 
@@ -103,7 +107,7 @@ page-set-usage: "<prefix><gray>Usage: /holograma page default <id> <page_number>
 page-set-success: "<prefix><green>Set page <page_number> as the default page for hologram '<hologram_id>'.</green>"
 page-not-found: "<prefix><red>Page <page_number> not found in hologram '<hologram_id>'.</red>"
 
-line-usage: "<prefix><gray>Usage: /holograma line <add|delete|set|offset|height> <id> <page> ...</gray>"
+line-usage: "<prefix><gray>Usage: /holograma line <add|delete|set|offset|height|scale> <id> <page> ...</gray>"
 line-add-usage: "<prefix><gray>Usage: /holograma line add <id> <page> <type> <content></gray>"
 line-add-success: "<prefix><green>Added a new line to page <page_number> of hologram '<hologram_id>'.</green>"
 line-remove-usage: "<prefix><gray>Usage: /holograma line delete <id> <page> <line_number></gray>"
@@ -115,6 +119,7 @@ invalid-line-type: "<prefix><red>Invalid line type '<type>'. Valid types: TEXT, 
 invalid-item-material: "<prefix><red>Invalid item material '<content>'.</red>"
 invalid-block-content: "<prefix><red>Invalid block content '<content>'. Use a block material or valid block data.</red>"
 line-set-invalid-content: "<prefix><red>Invalid line content '<content>'.</red>"
+invalid-line-scale-number: "<prefix><red>Line scale must be greater than 0, or use 'default'.</red>"
 
 addline-usage: "<prefix><gray>Usage: /holograma addline <id> <page> <type> <content></gray>"
 setline-usage: "<prefix><gray>Usage: /holograma setline <id> <page> <line> <content></gray>"
@@ -129,6 +134,9 @@ offset-success: "<prefix><green>Set offset for line <line_number> to (x:<x>, y:<
 line-height-usage: "<prefix><gray>Usage: /holograma line height <id> <page> <line> <height|default></gray>"
 line-height-success: "<prefix><green>Set height for line <line_number> to <height>.</green>"
 invalid-line-height-number: "<prefix><red>Line height must be 0 or greater.</red>"
+line-scale-usage: "<prefix><gray>Usage: /holograma line scale <id> <page> <line> <factor|x y z|default></gray>"
+line-scale-success: "<prefix><green>Set scale for line <line_number> to (x:<x>, y:<y>, z:<z>).</green>"
+line-scale-unsupported: "<prefix><red>Only ITEM and BLOCK lines support per-line scale.</red>"
 
 permission-usage: "<prefix><gray>Usage: /holograma permission <id> [permission]</gray>"
 permission-set: "<prefix><green>Hologram '<hologram_id>' now requires permission '<permission>'.</green>"

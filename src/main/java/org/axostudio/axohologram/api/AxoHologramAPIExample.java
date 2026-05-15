@@ -29,6 +29,18 @@ import java.util.List;
  *     60L
  * );
  *
+ * api.createHologram(
+ *     "afk_zone",
+ *     location,
+ *     List.of(
+ *         api.createTextLine("&8&m--------&r &c&l✪ &4&lZONA AFK &c&l✪ &r&8&m--------"),
+ *         api.createTextLine(""),
+ *         api.createItemLine("PAPER"),
+ *         api.createItemLine("PLAYER_HEAD(%player_name%)"),
+ *         api.createBlockLine("END_PORTAL_FRAME")
+ *     )
+ * );
+ *
  * api.createItemHologram(
  *     "player_head",
  *     location,
@@ -59,6 +71,18 @@ public final class AxoHologramAPIExample {
                 location,
                 List.of("&e+50 XP"),
                 60L
+        );
+
+        api.createHologram(
+                "afk_zone",
+                location,
+                List.of(
+                        api.createTextLine("&8&m--------&r &c&l✪ &4&lZONA AFK &c&l✪ &r&8&m--------"),
+                        api.createTextLine(""),
+                        api.createItemLine("PAPER"),
+                        api.createItemLine("PLAYER_HEAD(%player_name%)"),
+                        api.createBlockLine("END_PORTAL_FRAME")
+                )
         );
 
         api.createItemHologram(

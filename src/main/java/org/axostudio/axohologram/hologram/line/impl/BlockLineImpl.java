@@ -22,6 +22,10 @@ public class BlockLineImpl implements HologramLine {
     private volatile Vector offset;
     private volatile double height;
     private volatile boolean heightOverride;
+    private volatile float scaleX;
+    private volatile float scaleY;
+    private volatile float scaleZ;
+    private volatile boolean scaleOverride;
     private volatile Billboard billboard;
     private volatile boolean billboardOverride;
     private volatile String permission;
@@ -32,6 +36,10 @@ public class BlockLineImpl implements HologramLine {
         this.offset = new Vector(0, 0, 0);
         this.height = 0.0D;
         this.heightOverride = false;
+        this.scaleX = 1.0F;
+        this.scaleY = 1.0F;
+        this.scaleZ = 1.0F;
+        this.scaleOverride = false;
         this.billboard = Billboard.fromString(plugin.getConfigManager().getConfig().getString("general.defaults.billboard", "center"));
         this.billboardOverride = false;
         this.permission = null;
@@ -82,6 +90,40 @@ public class BlockLineImpl implements HologramLine {
         return heightOverride;
     }
 
+    public float getScaleX() {
+        return scaleX;
+    }
+
+    public float getScaleY() {
+        return scaleY;
+    }
+
+    public float getScaleZ() {
+        return scaleZ;
+    }
+
+    public void setScale(float scale) {
+        setScale(scale, scale, scale);
+    }
+
+    public void setScale(float scaleX, float scaleY, float scaleZ) {
+        this.scaleX = normalizeScale(scaleX);
+        this.scaleY = normalizeScale(scaleY);
+        this.scaleZ = normalizeScale(scaleZ);
+        this.scaleOverride = true;
+    }
+
+    public void clearScale() {
+        this.scaleX = 1.0F;
+        this.scaleY = 1.0F;
+        this.scaleZ = 1.0F;
+        this.scaleOverride = false;
+    }
+
+    public boolean hasScaleOverride() {
+        return scaleOverride;
+    }
+
     @Override
     public Billboard getBillboard() {
         return billboard;
@@ -115,12 +157,12 @@ public class BlockLineImpl implements HologramLine {
 
     @Override
     public void spawn(Player player, Hologram hologram, int pageIndex, int lineIndex, Location location, Billboard billboard) {
-        HologramPacketManager.spawnBlockLine(player, hologram, pageIndex, lineIndex, location, blockData, billboard);
+        HologramPacketManager.spawnBlockLine(player, hologram, pageIndex, lineIndex, location, this, blockData, billboard);
     }
 
     @Override
     public void update(Player player, Hologram hologram, int pageIndex, int lineIndex, Location location, Billboard billboard) {
-        HologramPacketManager.updateBlockLine(player, hologram, pageIndex, lineIndex, location, blockData, billboard);
+        HologramPacketManager.updateBlockLine(player, hologram, pageIndex, lineIndex, location, this, blockData, billboard);
     }
 
     @Override
@@ -137,6 +179,14 @@ public class BlockLineImpl implements HologramLine {
         offsetSection.set("y", offset.getY());
         offsetSection.set("z", offset.getZ());
         section.set("height", heightOverride ? height : null);
+        if (scaleOverride) {
+            ConfigurationSection scaleSection = section.createSection("scale");
+            scaleSection.set("x", scaleX);
+            scaleSection.set("y", scaleY);
+            scaleSection.set("z", scaleZ);
+        } else {
+            section.set("scale", null);
+        }
         if (billboardOverride) {
             section.set("billboard", billboard.name());
         } else {
@@ -161,6 +211,10 @@ public class BlockLineImpl implements HologramLine {
             line.setHeight(section.contains("height")
                     ? section.getDouble("height", 0.0D)
                     : section.getDouble("line-height", 0.0D));
+        }
+        float[] scale = readScale(section);
+        if (scale != null) {
+            line.setScale(scale[0], scale[1], scale[2]);
         }
         if (section.contains("billboard")) {
             line.setBillboard(Billboard.fromString(section.getString("billboard")));
@@ -199,6 +253,48 @@ public class BlockLineImpl implements HologramLine {
         return null;
     }
 
+    private static float[] readScale(ConfigurationSection section) {
+        ConfigurationSection scaleSection = section.getConfigurationSection("scale");
+        if (scaleSection != null) {
+            return new float[]{
+                    (float) scaleSection.getDouble("x", 1.0D),
+                    (float) scaleSection.getDouble("y", 1.0D),
+                    (float) scaleSection.getDouble("z", 1.0D)
+            };
+        }
+
+        Object rawScale = section.get("scale");
+        if (rawScale instanceof Number number) {
+            float scale = number.floatValue();
+            return new float[]{scale, scale, scale};
+        }
+        if (rawScale instanceof String text) {
+            try {
+                float scale = Float.parseFloat(text);
+                return new float[]{scale, scale, scale};
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+        if (rawScale instanceof Map<?, ?> scaleMap) {
+            return new float[]{
+                    (float) readDouble(scaleMap.get("x"), 1.0D),
+                    (float) readDouble(scaleMap.get("y"), 1.0D),
+                    (float) readDouble(scaleMap.get("z"), 1.0D)
+            };
+        }
+
+        Map<String, Object> values = section.getValues(false);
+        if (values.containsKey("scale.x") || values.containsKey("scale.y") || values.containsKey("scale.z")) {
+            return new float[]{
+                    (float) readDouble(values.get("scale.x"), 1.0D),
+                    (float) readDouble(values.get("scale.y"), 1.0D),
+                    (float) readDouble(values.get("scale.z"), 1.0D)
+            };
+        }
+        return null;
+    }
+
     private static double readDouble(Object value, double fallback) {
         if (value instanceof Number number) {
             return number.doubleValue();
@@ -223,5 +319,9 @@ public class BlockLineImpl implements HologramLine {
             throw new IllegalArgumentException("Invalid block data: " + content);
         }
         return blockData;
+    }
+
+    private static float normalizeScale(float scale) {
+        return scale <= 0.0F ? 1.0F : scale;
     }
 }

@@ -7,7 +7,11 @@ import org.axostudio.axohologram.animation.RenderedDisplayAnimation;
 import org.axostudio.axohologram.hologram.Hologram;
 import org.axostudio.axohologram.hologram.action.HologramClickType;
 import org.axostudio.axohologram.hologram.billboard.Billboard;
+import org.axostudio.axohologram.hologram.line.HologramLine;
+import org.axostudio.axohologram.hologram.line.impl.BlockLineImpl;
+import org.axostudio.axohologram.hologram.line.impl.ItemLineImpl;
 import org.bukkit.Bukkit;
+import org.bukkit.Color;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.block.data.BlockData;
@@ -36,6 +40,8 @@ public final class HologramPacketManager {
     private static final Map<UUID, Map<LineKey, UUID>> PLAYER_LINE_INTERACTIONS = new ConcurrentHashMap<>();
     private static final Map<UUID, Map<LineKey, TextLineState>> PLAYER_LINE_TEXTS = new ConcurrentHashMap<>();
     private static final Map<UUID, TrackedDisplay> TRACKED_DISPLAYS = new ConcurrentHashMap<>();
+    private static final Map<UUID, DisplayState> DISPLAY_STATES = new ConcurrentHashMap<>();
+    private static final Map<UUID, TextStyleState> TEXT_STYLE_STATES = new ConcurrentHashMap<>();
     private static final Set<UUID> TRACKED_ENTITY_IDS = ConcurrentHashMap.newKeySet();
     private static final PlainTextComponentSerializer PLAIN_TEXT = PlainTextComponentSerializer.plainText();
 
@@ -49,6 +55,31 @@ public final class HologramPacketManager {
     }
 
     private record InteractionSize(float width, float height) {
+    }
+
+    private record DisplayState(
+            int interpolationDuration,
+            Display.Billboard billboard,
+            float viewRange,
+            float shadowRadius,
+            float shadowStrength,
+            float scaleX,
+            float scaleY,
+            float scaleZ,
+            float rollOffset,
+            boolean flipItemModel,
+            boolean brightnessEnabled,
+            int brightnessBlock,
+            int brightnessSky
+    ) {
+    }
+
+    private record TextStyleState(
+            boolean shadowed,
+            boolean seeThrough,
+            TextDisplay.TextAlignment alignment,
+            Color backgroundColor
+    ) {
     }
 
     public record TrackedDisplay(UUID viewerId, String hologramId, int pageIndex, int lineIndex) {
@@ -66,6 +97,12 @@ public final class HologramPacketManager {
             return;
         }
 
+        UUID trackedEntityId = playerLines(viewerId).get(new LineKey(hologram.getId(), pageIndex, lineIndex));
+        if (trackedEntityId != null && Bukkit.getEntity(trackedEntityId) instanceof TextDisplay display && display.isValid()) {
+            updateTextLine(viewerId, hologram, pageIndex, lineIndex, location, text, billboard);
+            return;
+        }
+
         Component displayText = normalizeText(text);
         LineKey key = new LineKey(hologram.getId(), pageIndex, lineIndex);
         TextLineState textState = createTextLineState(displayText, hologram);
@@ -76,8 +113,9 @@ public final class HologramPacketManager {
                 return;
             }
 
+            RenderedDisplayAnimation renderedAnimation = renderDisplayAnimation(hologram, spawnLocation);
             TextDisplay display = spawnLocation.getWorld().spawn(spawnLocation, TextDisplay.class, entity -> {
-                configureDisplay(entity, hologram, spawnLocation, billboard);
+                configureDisplay(entity, hologram, null, renderedAnimation, billboard);
                 applyTextStyle(entity, hologram);
                 entity.text(displayText);
             });
@@ -86,7 +124,7 @@ public final class HologramPacketManager {
                 return;
             }
             playerTexts(viewerId).put(key, textState);
-            syncInteraction(viewerId, hologram, pageIndex, lineIndex, spawnLocation,
+            syncInteraction(viewerId, hologram, pageIndex, lineIndex, renderedAnimation.location(),
                     textState.interactionWidth(),
                     textState.interactionHeight());
         });
@@ -122,7 +160,8 @@ public final class HologramPacketManager {
                 : previousTextState;
         Location targetLocation = location.clone();
         if (!scheduler().runAtEntity(display, () -> {
-            updateDisplay(display, hologram, targetLocation, billboard);
+            RenderedDisplayAnimation renderedAnimation = renderDisplayAnimation(hologram, targetLocation);
+            updateDisplay(display, hologram, null, renderedAnimation, billboard);
             applyTextStyle(display, hologram);
             if (textChanged) {
                 display.text(displayText);
@@ -130,24 +169,31 @@ public final class HologramPacketManager {
             if (textChanged || scaleChanged) {
                 playerTexts(viewerId).put(key, textState);
             }
-            syncInteraction(viewerId, hologram, pageIndex, lineIndex, targetLocation,
+            syncInteraction(viewerId, hologram, pageIndex, lineIndex, renderedAnimation.location(),
                     textState.interactionWidth(),
                     textState.interactionHeight());
+            showEntity(viewerId, display.getUniqueId());
         })) {
             destroyLine(viewerId, hologram.getId(), pageIndex, lineIndex);
             spawnTextLine(viewerId, hologram, pageIndex, lineIndex, location, text, billboard);
         }
     }
 
-    public static void spawnItemLine(Player player, Hologram hologram, int pageIndex, int lineIndex, Location location, ItemStack itemStack, Billboard billboard) {
+    public static void spawnItemLine(Player player, Hologram hologram, int pageIndex, int lineIndex, Location location, ItemLineImpl line, ItemStack itemStack, Billboard billboard) {
         if (player == null) {
             return;
         }
-        spawnItemLine(player.getUniqueId(), hologram, pageIndex, lineIndex, location, itemStack, billboard);
+        spawnItemLine(player.getUniqueId(), hologram, pageIndex, lineIndex, location, line, itemStack, billboard);
     }
 
-    public static void spawnItemLine(UUID viewerId, Hologram hologram, int pageIndex, int lineIndex, Location location, ItemStack itemStack, Billboard billboard) {
+    public static void spawnItemLine(UUID viewerId, Hologram hologram, int pageIndex, int lineIndex, Location location, ItemLineImpl line, ItemStack itemStack, Billboard billboard) {
         if (location == null || location.getWorld() == null) {
+            return;
+        }
+
+        UUID trackedEntityId = playerLines(viewerId).get(new LineKey(hologram.getId(), pageIndex, lineIndex));
+        if (trackedEntityId != null && Bukkit.getEntity(trackedEntityId) instanceof ItemDisplay display && display.isValid()) {
+            updateItemLine(viewerId, hologram, pageIndex, lineIndex, location, line, itemStack, billboard);
             return;
         }
 
@@ -159,62 +205,71 @@ public final class HologramPacketManager {
                 return;
             }
 
+            RenderedDisplayAnimation renderedAnimation = renderDisplayAnimation(hologram, spawnLocation);
             ItemDisplay display = spawnLocation.getWorld().spawn(spawnLocation, ItemDisplay.class, entity -> {
-                configureItemDisplay(entity, hologram, spawnLocation, stack, billboard);
+                configureItemDisplay(entity, hologram, line, renderedAnimation, stack, billboard);
                 entity.setItemStack(stack);
             });
 
             trackLine(viewerId, hologram.getId(), pageIndex, lineIndex, display);
-            syncInteraction(viewerId, hologram, pageIndex, lineIndex, spawnLocation,
-                    resolveDisplayInteractionSize(hologram),
-                    resolveDisplayInteractionSize(hologram));
+            syncInteraction(viewerId, hologram, pageIndex, lineIndex, renderedAnimation.location(),
+                    resolveDisplayInteractionSize(hologram, line),
+                    resolveDisplayInteractionSize(hologram, line));
         });
     }
 
-    public static void updateItemLine(Player player, Hologram hologram, int pageIndex, int lineIndex, Location location, ItemStack itemStack, Billboard billboard) {
+    public static void updateItemLine(Player player, Hologram hologram, int pageIndex, int lineIndex, Location location, ItemLineImpl line, ItemStack itemStack, Billboard billboard) {
         if (player == null) {
             return;
         }
-        updateItemLine(player.getUniqueId(), hologram, pageIndex, lineIndex, location, itemStack, billboard);
+        updateItemLine(player.getUniqueId(), hologram, pageIndex, lineIndex, location, line, itemStack, billboard);
     }
 
-    public static void updateItemLine(UUID viewerId, Hologram hologram, int pageIndex, int lineIndex, Location location, ItemStack itemStack, Billboard billboard) {
+    public static void updateItemLine(UUID viewerId, Hologram hologram, int pageIndex, int lineIndex, Location location, ItemLineImpl line, ItemStack itemStack, Billboard billboard) {
         LineKey key = new LineKey(hologram.getId(), pageIndex, lineIndex);
         UUID entityId = playerLines(viewerId).get(key);
         if (entityId == null) {
-            spawnItemLine(viewerId, hologram, pageIndex, lineIndex, location, itemStack, billboard);
+            spawnItemLine(viewerId, hologram, pageIndex, lineIndex, location, line, itemStack, billboard);
             return;
         }
 
         if (!(Bukkit.getEntity(entityId) instanceof ItemDisplay display) || !display.isValid()) {
             destroyLine(viewerId, hologram.getId(), pageIndex, lineIndex);
-            spawnItemLine(viewerId, hologram, pageIndex, lineIndex, location, itemStack, billboard);
+            spawnItemLine(viewerId, hologram, pageIndex, lineIndex, location, line, itemStack, billboard);
             return;
         }
 
         Location targetLocation = location.clone();
         ItemStack stack = itemStack.clone();
         if (!scheduler().runAtEntity(display, () -> {
-            updateItemDisplay(display, hologram, targetLocation, stack, billboard);
+            RenderedDisplayAnimation renderedAnimation = renderDisplayAnimation(hologram, targetLocation);
+            updateItemDisplay(display, hologram, line, renderedAnimation, stack, billboard);
             display.setItemStack(stack);
-            syncInteraction(viewerId, hologram, pageIndex, lineIndex, targetLocation,
-                    resolveDisplayInteractionSize(hologram),
-                    resolveDisplayInteractionSize(hologram));
+            syncInteraction(viewerId, hologram, pageIndex, lineIndex, renderedAnimation.location(),
+                    resolveDisplayInteractionSize(hologram, line),
+                    resolveDisplayInteractionSize(hologram, line));
+            showEntity(viewerId, display.getUniqueId());
         })) {
             destroyLine(viewerId, hologram.getId(), pageIndex, lineIndex);
-            spawnItemLine(viewerId, hologram, pageIndex, lineIndex, location, itemStack, billboard);
+            spawnItemLine(viewerId, hologram, pageIndex, lineIndex, location, line, itemStack, billboard);
         }
     }
 
-    public static void spawnBlockLine(Player player, Hologram hologram, int pageIndex, int lineIndex, Location location, BlockData blockData, Billboard billboard) {
+    public static void spawnBlockLine(Player player, Hologram hologram, int pageIndex, int lineIndex, Location location, BlockLineImpl line, BlockData blockData, Billboard billboard) {
         if (player == null) {
             return;
         }
-        spawnBlockLine(player.getUniqueId(), hologram, pageIndex, lineIndex, location, blockData, billboard);
+        spawnBlockLine(player.getUniqueId(), hologram, pageIndex, lineIndex, location, line, blockData, billboard);
     }
 
-    public static void spawnBlockLine(UUID viewerId, Hologram hologram, int pageIndex, int lineIndex, Location location, BlockData blockData, Billboard billboard) {
+    public static void spawnBlockLine(UUID viewerId, Hologram hologram, int pageIndex, int lineIndex, Location location, BlockLineImpl line, BlockData blockData, Billboard billboard) {
         if (location == null || location.getWorld() == null) {
+            return;
+        }
+
+        UUID trackedEntityId = playerLines(viewerId).get(new LineKey(hologram.getId(), pageIndex, lineIndex));
+        if (trackedEntityId != null && Bukkit.getEntity(trackedEntityId) instanceof BlockDisplay display && display.isValid()) {
+            updateBlockLine(viewerId, hologram, pageIndex, lineIndex, location, line, blockData, billboard);
             return;
         }
 
@@ -225,60 +280,63 @@ public final class HologramPacketManager {
                 return;
             }
 
+            RenderedDisplayAnimation renderedAnimation = renderDisplayAnimation(hologram, spawnLocation);
             BlockDisplay display = spawnLocation.getWorld().spawn(spawnLocation, BlockDisplay.class, entity -> {
-                configureDisplay(entity, hologram, spawnLocation, billboard);
+                configureDisplay(entity, hologram, line, renderedAnimation, billboard);
                 entity.setBlock(blockData);
             });
 
             trackLine(viewerId, hologram.getId(), pageIndex, lineIndex, display);
-            syncInteraction(viewerId, hologram, pageIndex, lineIndex, spawnLocation,
-                    resolveDisplayInteractionSize(hologram),
-                    resolveDisplayInteractionSize(hologram));
+            syncInteraction(viewerId, hologram, pageIndex, lineIndex, renderedAnimation.location(),
+                    resolveDisplayInteractionSize(hologram, line),
+                    resolveDisplayInteractionSize(hologram, line));
         });
     }
 
-    public static void updateBlockLine(Player player, Hologram hologram, int pageIndex, int lineIndex, Location location, BlockData blockData, Billboard billboard) {
+    public static void updateBlockLine(Player player, Hologram hologram, int pageIndex, int lineIndex, Location location, BlockLineImpl line, BlockData blockData, Billboard billboard) {
         if (player == null) {
             return;
         }
-        updateBlockLine(player.getUniqueId(), hologram, pageIndex, lineIndex, location, blockData, billboard);
+        updateBlockLine(player.getUniqueId(), hologram, pageIndex, lineIndex, location, line, blockData, billboard);
     }
 
-    public static void updateBlockLine(UUID viewerId, Hologram hologram, int pageIndex, int lineIndex, Location location, BlockData blockData, Billboard billboard) {
+    public static void updateBlockLine(UUID viewerId, Hologram hologram, int pageIndex, int lineIndex, Location location, BlockLineImpl line, BlockData blockData, Billboard billboard) {
         LineKey key = new LineKey(hologram.getId(), pageIndex, lineIndex);
         UUID entityId = playerLines(viewerId).get(key);
         if (entityId == null) {
-            spawnBlockLine(viewerId, hologram, pageIndex, lineIndex, location, blockData, billboard);
+            spawnBlockLine(viewerId, hologram, pageIndex, lineIndex, location, line, blockData, billboard);
             return;
         }
 
         if (!(Bukkit.getEntity(entityId) instanceof BlockDisplay display) || !display.isValid()) {
             destroyLine(viewerId, hologram.getId(), pageIndex, lineIndex);
-            spawnBlockLine(viewerId, hologram, pageIndex, lineIndex, location, blockData, billboard);
+            spawnBlockLine(viewerId, hologram, pageIndex, lineIndex, location, line, blockData, billboard);
             return;
         }
 
         Location targetLocation = location.clone();
         if (!scheduler().runAtEntity(display, () -> {
-            updateDisplay(display, hologram, targetLocation, billboard);
+            RenderedDisplayAnimation renderedAnimation = renderDisplayAnimation(hologram, targetLocation);
+            updateDisplay(display, hologram, line, renderedAnimation, billboard);
             display.setBlock(blockData);
-            syncInteraction(viewerId, hologram, pageIndex, lineIndex, targetLocation,
-                    resolveDisplayInteractionSize(hologram),
-                    resolveDisplayInteractionSize(hologram));
+            syncInteraction(viewerId, hologram, pageIndex, lineIndex, renderedAnimation.location(),
+                    resolveDisplayInteractionSize(hologram, line),
+                    resolveDisplayInteractionSize(hologram, line));
+            showEntity(viewerId, display.getUniqueId());
         })) {
             destroyLine(viewerId, hologram.getId(), pageIndex, lineIndex);
-            spawnBlockLine(viewerId, hologram, pageIndex, lineIndex, location, blockData, billboard);
+            spawnBlockLine(viewerId, hologram, pageIndex, lineIndex, location, line, blockData, billboard);
         }
     }
 
-    public static boolean updateLineDisplayState(Player player, Hologram hologram, int pageIndex, int lineIndex, Location location, Billboard billboard) {
+    public static boolean updateLineDisplayState(Player player, Hologram hologram, int pageIndex, int lineIndex, Location location, Billboard billboard, HologramLine line) {
         if (player == null) {
             return false;
         }
-        return updateLineDisplayState(player.getUniqueId(), hologram, pageIndex, lineIndex, location, billboard);
+        return updateLineDisplayState(player.getUniqueId(), hologram, pageIndex, lineIndex, location, billboard, line);
     }
 
-    public static boolean updateLineDisplayState(UUID viewerId, Hologram hologram, int pageIndex, int lineIndex, Location location, Billboard billboard) {
+    public static boolean updateLineDisplayState(UUID viewerId, Hologram hologram, int pageIndex, int lineIndex, Location location, Billboard billboard, HologramLine line) {
         if (viewerId == null || hologram == null || location == null || location.getWorld() == null) {
             return false;
         }
@@ -300,12 +358,14 @@ public final class HologramPacketManager {
         }
 
         Location targetLocation = location.clone();
-        InteractionSize interactionSize = resolveExistingInteractionSize(viewerId, key, display, hologram);
+        InteractionSize interactionSize = resolveExistingInteractionSize(viewerId, key, display, hologram, line);
         if (!scheduler().runAtEntity(display, () -> {
-            updateDisplay(display, hologram, targetLocation, billboard);
-            syncInteraction(viewerId, hologram, pageIndex, lineIndex, targetLocation,
+            RenderedDisplayAnimation renderedAnimation = renderDisplayAnimation(hologram, targetLocation);
+            updateDisplay(display, hologram, line, renderedAnimation, billboard);
+            syncInteraction(viewerId, hologram, pageIndex, lineIndex, renderedAnimation.location(),
                     interactionSize.width(),
                     interactionSize.height());
+            showEntity(viewerId, display.getUniqueId());
         })) {
             destroyLine(viewerId, hologram.getId(), pageIndex, lineIndex);
             return false;
@@ -362,6 +422,19 @@ public final class HologramPacketManager {
         destroyMatchingLines(viewerId, hologramId, null, null);
     }
 
+    public static boolean reshowAllHologramLines(Player player, String hologramId) {
+        if (player == null) {
+            return false;
+        }
+        return reshowAllHologramLines(player.getUniqueId(), hologramId);
+    }
+
+    public static boolean reshowAllHologramLines(UUID viewerId, String hologramId) {
+        boolean lineEntitiesReady = reshowMatchingEntities(viewerId, PLAYER_LINE_ENTITIES.get(viewerId), hologramId, true);
+        reshowMatchingEntities(viewerId, PLAYER_LINE_INTERACTIONS.get(viewerId), hologramId, false);
+        return lineEntitiesReady;
+    }
+
     public static void destroyAllTrackedEntities() {
         Set<UUID> entityIds = new HashSet<>(TRACKED_ENTITY_IDS);
         for (Map<LineKey, UUID> trackedLines : PLAYER_LINE_ENTITIES.values()) {
@@ -376,6 +449,8 @@ public final class HologramPacketManager {
         PLAYER_LINE_TEXTS.clear();
         TRACKED_ENTITY_IDS.clear();
         TRACKED_DISPLAYS.clear();
+        DISPLAY_STATES.clear();
+        TEXT_STYLE_STATES.clear();
 
         for (UUID entityId : entityIds) {
             removeEntityFromWorld(entityId);
@@ -466,6 +541,36 @@ public final class HologramPacketManager {
         }
     }
 
+    private static boolean reshowMatchingEntities(UUID viewerId, Map<LineKey, UUID> trackedEntities, String hologramId, boolean removeTextState) {
+        if (trackedEntities == null || trackedEntities.isEmpty()) {
+            return false;
+        }
+
+        boolean found = false;
+        boolean allValid = true;
+        for (Map.Entry<LineKey, UUID> entry : new HashSet<>(trackedEntities.entrySet())) {
+            LineKey key = entry.getKey();
+            if (!key.hologramId().equals(hologramId)) {
+                continue;
+            }
+
+            found = true;
+            UUID entityId = entry.getValue();
+            Entity entity = Bukkit.getEntity(entityId);
+            if (entity == null || !entity.isValid()) {
+                allValid = false;
+                removeTrackedLineEntity(trackedEntities, key);
+                if (removeTextState) {
+                    removeTextLineState(viewerId, key);
+                }
+                continue;
+            }
+
+            showEntity(viewerId, entityId);
+        }
+        return found && allValid;
+    }
+
     private static Map<LineKey, UUID> playerLines(UUID viewerId) {
         return PLAYER_LINE_ENTITIES.computeIfAbsent(viewerId, ignored -> new ConcurrentHashMap<>());
     }
@@ -553,41 +658,40 @@ public final class HologramPacketManager {
         });
     }
 
-    private static void configureDisplay(Display display, Hologram hologram, Location location, Billboard billboard) {
-        configureDisplay(display, hologram, location, billboard, false);
+    private static void configureDisplay(Display display, Hologram hologram, HologramLine line, RenderedDisplayAnimation renderedAnimation, Billboard billboard) {
+        configureDisplay(display, hologram, line, renderedAnimation, billboard, false);
     }
 
-    private static void configureItemDisplay(ItemDisplay display, Hologram hologram, Location location, ItemStack itemStack, Billboard billboard) {
-        configureDisplay(display, hologram, location, billboard, shouldFlipItemModel(itemStack));
+    private static void configureItemDisplay(ItemDisplay display, Hologram hologram, HologramLine line, RenderedDisplayAnimation renderedAnimation, ItemStack itemStack, Billboard billboard) {
+        configureDisplay(display, hologram, line, renderedAnimation, billboard, shouldFlipItemModel(itemStack));
     }
 
-    private static void configureDisplay(Display display, Hologram hologram, Location location, Billboard billboard, boolean flipItemModel) {
+    private static void configureDisplay(Display display, Hologram hologram, HologramLine line, RenderedDisplayAnimation renderedAnimation, Billboard billboard, boolean flipItemModel) {
         display.setVisibleByDefault(false);
         display.setPersistent(false);
         display.setInvulnerable(true);
         display.setGravity(false);
-        applyDisplayState(display, hologram, location, billboard, true, flipItemModel);
+        applyDisplayState(display, hologram, line, renderedAnimation, billboard, true, flipItemModel);
         display.setInterpolationDelay(0);
     }
 
-    private static void updateDisplay(Display display, Hologram hologram, Location location, Billboard billboard) {
-        applyDisplayState(display, hologram, location, billboard, true);
+    private static void updateDisplay(Display display, Hologram hologram, HologramLine line, RenderedDisplayAnimation renderedAnimation, Billboard billboard) {
+        applyDisplayState(display, hologram, line, renderedAnimation, billboard, true);
     }
 
-    private static void updateItemDisplay(ItemDisplay display, Hologram hologram, Location location, ItemStack itemStack, Billboard billboard) {
-        applyDisplayState(display, hologram, location, billboard, true, shouldFlipItemModel(itemStack));
+    private static void updateItemDisplay(ItemDisplay display, Hologram hologram, HologramLine line, RenderedDisplayAnimation renderedAnimation, ItemStack itemStack, Billboard billboard) {
+        applyDisplayState(display, hologram, line, renderedAnimation, billboard, true, shouldFlipItemModel(itemStack));
     }
 
-    private static void applyDisplayState(Display display, Hologram hologram, Location location, Billboard billboard, boolean allowTeleport) {
-        applyDisplayState(display, hologram, location, billboard, allowTeleport, false);
+    private static void applyDisplayState(Display display, Hologram hologram, HologramLine line, RenderedDisplayAnimation renderedAnimation, Billboard billboard, boolean allowTeleport) {
+        applyDisplayState(display, hologram, line, renderedAnimation, billboard, allowTeleport, false);
     }
 
-    private static void applyDisplayState(Display display, Hologram hologram, Location location, Billboard billboard, boolean allowTeleport, boolean flipItemModel) {
-        if (location == null || location.getWorld() == null) {
+    private static void applyDisplayState(Display display, Hologram hologram, HologramLine line, RenderedDisplayAnimation renderedAnimation, Billboard billboard, boolean allowTeleport, boolean flipItemModel) {
+        if (renderedAnimation == null || renderedAnimation.location() == null || renderedAnimation.location().getWorld() == null) {
             return;
         }
 
-        RenderedDisplayAnimation renderedAnimation = renderDisplayAnimation(hologram, location);
         Location targetLocation = renderedAnimation.location();
         if (allowTeleport && shouldTeleport(display, targetLocation)) {
             display.teleportAsync(targetLocation);
@@ -597,19 +701,39 @@ public final class HologramPacketManager {
             display.setRotation(targetLocation.getYaw(), targetLocation.getPitch());
         }
 
-        display.setInterpolationDelay(0);
-        display.setInterpolationDuration(renderedAnimation.interpolationDuration());
-        display.setBillboard(billboard.toPaperBillboard());
-        display.setViewRange(resolveViewRange(hologram));
-        display.setShadowRadius(hologram.getShadowRadius());
-        display.setShadowStrength(hologram.getShadowStrength());
-        display.setTransformation(buildTransformation(hologram, renderedAnimation.scaleMultiplier(), renderedAnimation.rollOffset(), flipItemModel));
-
-        if (hologram.getBrightnessBlock() >= 0 || hologram.getBrightnessSky() >= 0) {
-            int block = hologram.getBrightnessBlock() >= 0 ? hologram.getBrightnessBlock() : 15;
-            int sky = hologram.getBrightnessSky() >= 0 ? hologram.getBrightnessSky() : 15;
-            display.setBrightness(new Display.Brightness(block, sky));
+        DisplayState state = createDisplayState(hologram, line, renderedAnimation, billboard, flipItemModel);
+        DisplayState previousState = DISPLAY_STATES.get(display.getUniqueId());
+        if (Objects.equals(previousState, state)) {
+            return;
         }
+
+        if (previousState == null || previousState.interpolationDuration() != state.interpolationDuration()) {
+            display.setInterpolationDuration(state.interpolationDuration());
+        }
+        if (previousState == null || previousState.billboard() != state.billboard()) {
+            display.setBillboard(state.billboard());
+        }
+        if (previousState == null || Float.compare(previousState.viewRange(), state.viewRange()) != 0) {
+            display.setViewRange(state.viewRange());
+        }
+        if (previousState == null || Float.compare(previousState.shadowRadius(), state.shadowRadius()) != 0) {
+            display.setShadowRadius(state.shadowRadius());
+        }
+        if (previousState == null || Float.compare(previousState.shadowStrength(), state.shadowStrength()) != 0) {
+            display.setShadowStrength(state.shadowStrength());
+        }
+        if (shouldUpdateTransformation(previousState, state)) {
+            display.setTransformation(buildTransformation(state));
+        }
+        if (state.brightnessEnabled()) {
+            if (!hasSameBrightness(previousState, state)) {
+                display.setBrightness(new Display.Brightness(state.brightnessBlock(), state.brightnessSky()));
+            }
+        } else if (previousState != null && previousState.brightnessEnabled()) {
+            display.setBrightness(null);
+        }
+
+        DISPLAY_STATES.put(display.getUniqueId(), state);
     }
 
     private static void syncInteraction(UUID viewerId, Hologram hologram, int pageIndex, int lineIndex, Location location, float width, float height) {
@@ -623,7 +747,7 @@ public final class HologramPacketManager {
 
         LineKey key = new LineKey(hologram.getId(), pageIndex, lineIndex);
         UUID interactionId = playerInteractions(viewerId).get(key);
-        Location interactionLocation = resolveInteractionLocation(resolveAnimatedLocation(hologram, location), height);
+        Location interactionLocation = resolveInteractionLocation(location, height);
         float interactionWidth = clampInteractionDimension(width);
         float interactionHeight = clampInteractionDimension(height);
         scheduler().runAtLocation(interactionLocation, () -> {
@@ -633,6 +757,7 @@ public final class HologramPacketManager {
 
             if (interactionId != null && Bukkit.getEntity(interactionId) instanceof Interaction interaction && interaction.isValid()) {
                 updateInteraction(interaction, interactionLocation, interactionWidth, interactionHeight);
+                showEntity(viewerId, interaction.getUniqueId());
                 return;
             }
 
@@ -695,17 +820,34 @@ public final class HologramPacketManager {
     }
 
     private static void applyTextStyle(TextDisplay display, Hologram hologram) {
-        display.setShadowed(hologram.hasTextShadow());
-        display.setSeeThrough(hologram.isSeeThrough());
-        display.setAlignment(hologram.getAlignment());
-        display.setTextOpacity((byte) 255);
-        if (hologram.getBackgroundColor() != null) {
-            display.setDefaultBackground(false);
-            display.setBackgroundColor(hologram.getBackgroundColor());
-        } else {
-            display.setDefaultBackground(false);
-            display.setBackgroundColor(null);
+        TextStyleState state = new TextStyleState(
+                hologram.hasTextShadow(),
+                hologram.isSeeThrough(),
+                hologram.getAlignment(),
+                hologram.getBackgroundColor()
+        );
+        TextStyleState previousState = TEXT_STYLE_STATES.get(display.getUniqueId());
+        if (Objects.equals(previousState, state)) {
+            return;
         }
+
+        if (previousState == null || previousState.shadowed() != state.shadowed()) {
+            display.setShadowed(state.shadowed());
+        }
+        if (previousState == null || previousState.seeThrough() != state.seeThrough()) {
+            display.setSeeThrough(state.seeThrough());
+        }
+        if (previousState == null || previousState.alignment() != state.alignment()) {
+            display.setAlignment(state.alignment());
+        }
+        if (previousState == null) {
+            display.setTextOpacity((byte) 255);
+            display.setDefaultBackground(false);
+        }
+        if (previousState == null || !Objects.equals(previousState.backgroundColor(), state.backgroundColor())) {
+            display.setBackgroundColor(state.backgroundColor());
+        }
+        TEXT_STYLE_STATES.put(display.getUniqueId(), state);
     }
 
     private static float resolveViewRange(Hologram hologram) {
@@ -748,11 +890,12 @@ public final class HologramPacketManager {
         return text == null ? Component.empty() : text;
     }
 
-    private static float resolveDisplayInteractionSize(Hologram hologram) {
-        return Math.max(0.75F, hologram.getScale());
+    private static float resolveDisplayInteractionSize(Hologram hologram, HologramLine line) {
+        float hologramScale = Math.max(hologram.getScaleX(), Math.max(hologram.getScaleY(), hologram.getScaleZ()));
+        return Math.max(0.75F, hologramScale * resolveMaxLineScale(line));
     }
 
-    private static InteractionSize resolveExistingInteractionSize(UUID viewerId, LineKey key, Display display, Hologram hologram) {
+    private static InteractionSize resolveExistingInteractionSize(UUID viewerId, LineKey key, Display display, Hologram hologram, HologramLine line) {
         if (display instanceof TextDisplay textDisplay) {
             TextLineState textState = getTextLineState(viewerId, key);
             if (textState != null) {
@@ -763,7 +906,7 @@ public final class HologramPacketManager {
             return resolveTextInteractionSize(text, hologram);
         }
 
-        float interactionSize = resolveDisplayInteractionSize(hologram);
+        float interactionSize = resolveDisplayInteractionSize(hologram, line);
         return new InteractionSize(interactionSize, interactionSize);
     }
 
@@ -775,18 +918,69 @@ public final class HologramPacketManager {
         return Math.max(0.1F, Math.min(value, 32.0F));
     }
 
-    private static Transformation buildTransformation(Hologram hologram, float scaleMultiplier, float rollOffset, boolean flipItemModel) {
-        float multiplier = Math.max(0.01F, scaleMultiplier);
+    private static DisplayState createDisplayState(Hologram hologram, HologramLine line, RenderedDisplayAnimation renderedAnimation, Billboard billboard, boolean flipItemModel) {
+        float multiplier = Math.max(0.01F, renderedAnimation.scaleMultiplier());
+        boolean brightnessEnabled = hologram.getBrightnessBlock() >= 0 || hologram.getBrightnessSky() >= 0;
+        int brightnessBlock = brightnessEnabled ? (hologram.getBrightnessBlock() >= 0 ? hologram.getBrightnessBlock() : 15) : -1;
+        int brightnessSky = brightnessEnabled ? (hologram.getBrightnessSky() >= 0 ? hologram.getBrightnessSky() : 15) : -1;
+        return new DisplayState(
+                renderedAnimation.interpolationDuration(),
+                billboard.toPaperBillboard(),
+                resolveViewRange(hologram),
+                hologram.getShadowRadius(),
+                hologram.getShadowStrength(),
+                hologram.getScaleX() * resolveLineScaleX(line) * multiplier,
+                hologram.getScaleY() * resolveLineScaleY(line) * multiplier,
+                hologram.getScaleZ() * resolveLineScaleZ(line) * multiplier,
+                renderedAnimation.rollOffset(),
+                flipItemModel,
+                brightnessEnabled,
+                brightnessBlock,
+                brightnessSky
+        );
+    }
+
+    private static Transformation buildTransformation(DisplayState state) {
         return new Transformation(
                 new Vector3f(0.0F, 0.0F, 0.0F),
-                new Quaternionf().rotateZ((float) Math.toRadians(rollOffset)),
-                new Vector3f(
-                        hologram.getScaleX() * multiplier,
-                        hologram.getScaleY() * multiplier,
-                        hologram.getScaleZ() * multiplier
-                ),
-                flipItemModel ? new Quaternionf().rotateY((float) Math.PI) : new Quaternionf()
+                new Quaternionf().rotateZ((float) Math.toRadians(state.rollOffset())),
+                new Vector3f(state.scaleX(), state.scaleY(), state.scaleZ()),
+                state.flipItemModel() ? new Quaternionf().rotateY((float) Math.PI) : new Quaternionf()
         );
+    }
+
+    private static float resolveLineScaleX(HologramLine line) {
+        if (line instanceof ItemLineImpl itemLine) {
+            return itemLine.getScaleX();
+        }
+        if (line instanceof BlockLineImpl blockLine) {
+            return blockLine.getScaleX();
+        }
+        return 1.0F;
+    }
+
+    private static float resolveLineScaleY(HologramLine line) {
+        if (line instanceof ItemLineImpl itemLine) {
+            return itemLine.getScaleY();
+        }
+        if (line instanceof BlockLineImpl blockLine) {
+            return blockLine.getScaleY();
+        }
+        return 1.0F;
+    }
+
+    private static float resolveLineScaleZ(HologramLine line) {
+        if (line instanceof ItemLineImpl itemLine) {
+            return itemLine.getScaleZ();
+        }
+        if (line instanceof BlockLineImpl blockLine) {
+            return blockLine.getScaleZ();
+        }
+        return 1.0F;
+    }
+
+    private static float resolveMaxLineScale(HologramLine line) {
+        return Math.max(resolveLineScaleX(line), Math.max(resolveLineScaleY(line), resolveLineScaleZ(line)));
     }
 
     private static boolean shouldFlipItemModel(ItemStack itemStack) {
@@ -799,10 +993,6 @@ public final class HologramPacketManager {
             return plugin.getAnimationManager().renderDisplayAnimation(hologram, location);
         }
         return new RenderedDisplayAnimation(location.clone(), 1.0F, 0.0F, 0);
-    }
-
-    private static Location resolveAnimatedLocation(Hologram hologram, Location location) {
-        return renderDisplayAnimation(hologram, location).location();
     }
 
     public static void hideAllTrackedEntitiesForPlayer(Player player) {
@@ -877,6 +1067,8 @@ public final class HologramPacketManager {
     private static void removeEntity(UUID entityId) {
         TRACKED_ENTITY_IDS.remove(entityId);
         TRACKED_DISPLAYS.remove(entityId);
+        DISPLAY_STATES.remove(entityId);
+        TEXT_STYLE_STATES.remove(entityId);
         removeEntityFromWorld(entityId);
     }
 
@@ -893,6 +1085,22 @@ public final class HologramPacketManager {
         }
 
         scheduler().runAtEntity(entity, entity::remove);
+    }
+
+    private static boolean shouldUpdateTransformation(DisplayState previousState, DisplayState state) {
+        return previousState == null
+                || Float.compare(previousState.scaleX(), state.scaleX()) != 0
+                || Float.compare(previousState.scaleY(), state.scaleY()) != 0
+                || Float.compare(previousState.scaleZ(), state.scaleZ()) != 0
+                || Float.compare(previousState.rollOffset(), state.rollOffset()) != 0
+                || previousState.flipItemModel() != state.flipItemModel();
+    }
+
+    private static boolean hasSameBrightness(DisplayState previousState, DisplayState state) {
+        return previousState != null
+                && previousState.brightnessEnabled()
+                && previousState.brightnessBlock() == state.brightnessBlock()
+                && previousState.brightnessSky() == state.brightnessSky();
     }
 
     private static org.axostudio.axohologram.util.SchedulerUtil scheduler() {

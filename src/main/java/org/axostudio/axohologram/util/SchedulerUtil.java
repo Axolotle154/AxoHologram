@@ -33,6 +33,11 @@ public final class SchedulerUtil {
             return;
         }
 
+        if (!isFolia && Bukkit.isPrimaryThread()) {
+            runnable.run();
+            return;
+        }
+
         if (isFolia) {
             plugin.getServer().getGlobalRegionScheduler().execute(plugin, runnable);
         } else {
@@ -74,6 +79,11 @@ public final class SchedulerUtil {
             return;
         }
 
+        if (!isFolia && Bukkit.isPrimaryThread()) {
+            runnable.run();
+            return;
+        }
+
         if (isFolia) {
             plugin.getServer().getGlobalRegionScheduler().execute(plugin, runnable);
         } else {
@@ -110,6 +120,19 @@ public final class SchedulerUtil {
         return bukkitTask::cancel;
     }
 
+    public TaskHandle runGlobalAtFixedRate(Runnable task, long initialDelayTicks, long periodTicks) {
+        if (!plugin.isEnabled()) {
+            return NOOP_TASK;
+        }
+
+        if (isFolia) {
+            ScheduledTask scheduledTask = plugin.getServer().getGlobalRegionScheduler().runAtFixedRate(plugin, ignored -> task.run(), initialDelayTicks, periodTicks);
+            return scheduledTask::cancel;
+        }
+        BukkitTask bukkitTask = Bukkit.getScheduler().runTaskTimer(plugin, task, initialDelayTicks, periodTicks);
+        return bukkitTask::cancel;
+    }
+
     public void runAtLocation(Location location, Runnable runnable) {
         if (location == null || location.getWorld() == null) {
             return;
@@ -133,7 +156,11 @@ public final class SchedulerUtil {
             }
             plugin.getServer().getRegionScheduler().execute(plugin, location, runnable);
         } else {
-            run(runnable);
+            if (Bukkit.isPrimaryThread()) {
+                runnable.run();
+                return;
+            }
+            Bukkit.getScheduler().runTask(plugin, runnable);
         }
     }
 
@@ -160,7 +187,11 @@ public final class SchedulerUtil {
             }
             return entity.getScheduler().run(plugin, task -> runnable.run(), null) != null;
         } else {
-            run(runnable);
+            if (Bukkit.isPrimaryThread()) {
+                runnable.run();
+                return true;
+            }
+            Bukkit.getScheduler().runTask(plugin, runnable);
             return true;
         }
     }

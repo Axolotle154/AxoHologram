@@ -22,6 +22,21 @@ general:
 placeholders:
   refresh-interval: 20
 
+performance:
+  visibility-check-interval-ticks: 40
+  visibility-move-distance-blocks: 1.5
+  dynamic-refresh-interval-ticks: 100
+  heavy-placeholder-refresh-interval-ticks: 200
+  animation-refresh-interval-ticks: 2
+  skip-refresh-when-no-viewers: true
+  cache-placeholder-results: true
+  placeholder-cache-seconds: 5
+  heavy-placeholder-cache-seconds: 10
+  static-holograms-never-update: true
+  update-only-when-text-changes: true
+  low-tps-animation-skip: true
+  low-tps-threshold: 17.0
+
 integrations:
   placeholderapi: true
   miniplaceholders: true

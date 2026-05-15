@@ -10,9 +10,11 @@ import org.axostudio.axohologram.hologram.page.HologramPage;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
+import org.bukkit.util.Vector;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -108,11 +110,19 @@ public class AxoHologramPageImpl implements HologramPage {
         }
 
         List<Map<String, Object>> serializedLines = new ArrayList<>();
+        List<String> compactTextGroup = new ArrayList<>();
         for (HologramLine line : lines) {
+            if (isCompactTextLine(line)) {
+                compactTextGroup.add(((TextLineImpl) line).getContent());
+                continue;
+            }
+
+            flushCompactTextGroup(serializedLines, compactTextGroup);
             YamlConfiguration lineConfig = new YamlConfiguration();
             line.serialize(lineConfig);
-            serializedLines.add(lineConfig.getValues(false));
+            serializedLines.add(new LinkedHashMap<>(lineConfig.getValues(false)));
         }
+        flushCompactTextGroup(serializedLines, compactTextGroup);
         section.set("lines", serializedLines);
     }
 
@@ -120,7 +130,7 @@ public class AxoHologramPageImpl implements HologramPage {
         AxoHologramPageImpl page = new AxoHologramPageImpl();
         page.setPermission(section.getString("permission"));
 
-        List<String> simpleTextLines = section.getStringList("text");
+        List<String> simpleTextLines = readTextEntries(section);
         if (!simpleTextLines.isEmpty()) {
             for (String line : simpleTextLines) {
                 page.addLine(new TextLineImpl(line, plugin));
@@ -149,6 +159,16 @@ public class AxoHologramPageImpl implements HologramPage {
                 }
 
                 try {
+                    if (type == LineType.TEXT) {
+                        List<String> groupedTextLines = readTextEntries(lineSection);
+                        if (!groupedTextLines.isEmpty()) {
+                            for (String lineContent : groupedTextLines) {
+                                page.addLine(new TextLineImpl(lineContent, plugin));
+                            }
+                            continue;
+                        }
+                    }
+
                     HologramLine line = switch (type) {
                         case TEXT -> TextLineImpl.deserialize(lineSection, plugin);
                         case ITEM -> ItemLineImpl.deserialize(lineSection, plugin);
@@ -163,6 +183,50 @@ public class AxoHologramPageImpl implements HologramPage {
             }
         }
         return page;
+    }
+
+    private void flushCompactTextGroup(List<Map<String, Object>> serializedLines, List<String> compactTextGroup) {
+        if (compactTextGroup.isEmpty()) {
+            return;
+        }
+
+        Map<String, Object> compactEntry = new LinkedHashMap<>();
+        compactEntry.put("type", LineType.TEXT.name());
+        compactEntry.put("text", new ArrayList<>(compactTextGroup));
+        serializedLines.add(compactEntry);
+        compactTextGroup.clear();
+    }
+
+    private boolean isCompactTextLine(HologramLine line) {
+        if (!(line instanceof TextLineImpl textLine)) {
+            return false;
+        }
+        if (textLine.hasBillboardOverride()) {
+            return false;
+        }
+        if (textLine.hasHeightOverride()) {
+            return false;
+        }
+        if (textLine.getPermission() != null && !textLine.getPermission().isBlank()) {
+            return false;
+        }
+        Vector offset = textLine.getOffset();
+        return offset.getX() == 0.0D && offset.getY() == 0.0D && offset.getZ() == 0.0D;
+    }
+
+    private static List<String> readTextEntries(ConfigurationSection section) {
+        Object rawText = section.get("text");
+        if (rawText instanceof List<?> rawList) {
+            List<String> lines = new ArrayList<>(rawList.size());
+            for (Object entry : rawList) {
+                lines.add(entry == null ? "" : String.valueOf(entry));
+            }
+            return lines;
+        }
+        if (rawText instanceof String singleLine) {
+            return List.of(singleLine);
+        }
+        return List.of();
     }
 
     private boolean isSimpleTextPage() {

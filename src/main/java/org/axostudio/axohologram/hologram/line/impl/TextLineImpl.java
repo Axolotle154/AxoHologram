@@ -115,13 +115,13 @@ public class TextLineImpl implements HologramLine {
 
     @Override
     public void spawn(Player player, Hologram hologram, int pageIndex, int lineIndex, Location location, Billboard billboard) {
-        Component parsedContent = MiniMessageUtil.parse(content, player);
+        Component parsedContent = MiniMessageUtil.parse(content, player, hologram.getId());
         HologramPacketManager.spawnTextLine(player, hologram, pageIndex, lineIndex, location, parsedContent, billboard);
     }
 
     @Override
     public void update(Player player, Hologram hologram, int pageIndex, int lineIndex, Location location, Billboard billboard) {
-        Component parsedContent = MiniMessageUtil.parse(content, player);
+        Component parsedContent = MiniMessageUtil.parse(content, player, hologram.getId());
         HologramPacketManager.updateTextLine(player, hologram, pageIndex, lineIndex, location, parsedContent, billboard);
     }
 

@@ -16,6 +16,7 @@ import org.axostudio.axohologram.integration.npc.NpcLinkService;
 import org.axostudio.axohologram.listener.HologramInteractionListener;
 import org.axostudio.axohologram.integration.PlaceholderAPIIntegration;
 import org.axostudio.axohologram.listener.PlayerListener;
+import org.axostudio.axohologram.util.MiniMessageUtil;
 import org.axostudio.axohologram.util.SchedulerUtil;
 import org.axostudio.axohologram.util.UpdateChecker;
 import org.bukkit.Bukkit;
@@ -193,9 +194,11 @@ public final class AxoHologram extends JavaPlugin {
     public void reloadPluginState() {
         shutdownIntegrations();
         configManager.loadAllConfigs();
+        MiniMessageUtil.clearPlaceholderApiCache();
         animationManager.reloadAnimations();
         hologramManager.reload();
         setupIntegrations();
+        checkForUpdates();
     }
 
     public static AxoHologram getInstance() {
@@ -238,21 +241,22 @@ public final class AxoHologram extends JavaPlugin {
         return importManager;
     }
 
+    public UpdateChecker getUpdateChecker() {
+        return updateChecker;
+    }
+
     private void checkForUpdates() {
         if (!configManager.getConfig().getBoolean("general.check-updates", true)) {
+            if (updateChecker != null) {
+                updateChecker.reset();
+            }
             getLogger().info("Update checker disabled in config.");
             return;
         }
 
-        updateChecker.getVersion(latestVersion -> {
-            String currentVersion = getPluginMeta().getVersion();
-            if (currentVersion.equalsIgnoreCase(latestVersion)) {
-                getLogger().info("You are running the latest version: " + currentVersion);
-            } else {
-                getLogger().warning("A new AxoHologram version is available: " + latestVersion + " (current: " + currentVersion + ").");
-                getLogger().warning("Download: https://www.spigotmc.org/resources/134707");
-            }
-        });
+        if (updateChecker != null) {
+            updateChecker.check();
+        }
     }
 
     private void logStartupBanner() {

@@ -36,7 +36,7 @@ public final class NpcLinkService {
             return;
         }
 
-        syncTask = plugin.getSchedulerUtil().runGlobalAtFixedRate(task -> syncLinkedHolograms(), interval, interval);
+        syncTask = plugin.getSchedulerUtil().runGlobalAtFixedRate(this::syncLinkedHolograms, interval, interval);
         syncLinkedHolograms();
     }
 

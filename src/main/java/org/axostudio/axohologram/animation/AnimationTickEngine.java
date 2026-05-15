@@ -12,7 +12,6 @@ import org.bukkit.Bukkit;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicLong;
 
 public final class AnimationTickEngine {
 
@@ -21,11 +20,15 @@ public final class AnimationTickEngine {
 
     private final AxoHologram plugin;
     private final AnimationManager animationManager;
-    private final AtomicLong currentTick = new AtomicLong();
+    private volatile long currentTick;
     private volatile List<AnimatedHologram> animatedHolograms = List.of();
     private volatile long nextAnimationScanTick;
     private volatile long nextTpsSampleTick;
     private volatile boolean lowTps;
+    private volatile boolean skipAnimationsOnLowTps;
+    private volatile boolean skipRefreshWhenNoViewers;
+    private volatile double lowTpsThreshold;
+    private volatile long tickRate;
     private SchedulerUtil.TaskHandle task;
 
     public AnimationTickEngine(AxoHologram plugin, AnimationManager animationManager) {
@@ -35,6 +38,7 @@ public final class AnimationTickEngine {
 
     public void start() {
         stop();
+        currentTick = 0L;
         animatedHolograms = List.of();
         nextAnimationScanTick = 0L;
         nextTpsSampleTick = 0L;
@@ -44,8 +48,11 @@ public final class AnimationTickEngine {
             return;
         }
 
-        long tickRate = settings.tickRate();
-        task = plugin.getSchedulerUtil().runGlobalAtFixedRate(ignored -> tick(tickRate), tickRate, tickRate);
+        tickRate = Math.max(1L, plugin.getConfigManager().getConfig().getLong("performance.animation-refresh-interval-ticks", settings.tickRate()));
+        skipAnimationsOnLowTps = plugin.getConfigManager().getConfig().getBoolean("performance.low-tps-animation-skip", settings.reduceQualityOnLowTps());
+        skipRefreshWhenNoViewers = plugin.getConfigManager().getConfig().getBoolean("performance.skip-refresh-when-no-viewers", true);
+        lowTpsThreshold = plugin.getConfigManager().getConfig().getDouble("performance.low-tps-threshold", 17.0D);
+        task = plugin.getSchedulerUtil().runGlobalAtFixedRate(this::tick, tickRate, tickRate);
     }
 
     public void stop() {
@@ -56,12 +63,13 @@ public final class AnimationTickEngine {
     }
 
     public long currentTick() {
-        return currentTick.get();
+        return currentTick;
     }
 
-    private void tick(long tickRate) {
-        long tick = currentTick.addAndGet(tickRate);
-        if (shouldSkipForLowTps(tick, tickRate)) {
+    private void tick() {
+        long tick = currentTick + tickRate;
+        currentTick = tick;
+        if (shouldSkipForLowTps(tick)) {
             return;
         }
 
@@ -76,7 +84,7 @@ public final class AnimationTickEngine {
 
         for (AnimatedHologram animatedHologram : animatedHolograms) {
             Hologram hologram = animatedHologram.hologram();
-            if (hologram.isEnabled() && hologramManager.getHologram(hologram.getId()) == hologram) {
+            if (hologram.isEnabled()) {
                 refreshAnimatedHologram(animatedHologram);
             }
         }
@@ -84,6 +92,10 @@ public final class AnimationTickEngine {
 
     private void refreshAnimatedHologram(AnimatedHologram animatedHologram) {
         Hologram hologram = animatedHologram.hologram();
+        if (skipRefreshWhenNoViewers && hologram instanceof AxoHologramImpl axoHologram && !axoHologram.hasActiveViewers()) {
+            return;
+        }
+
         if (animatedHologram.requiresFullRefresh()) {
             hologram.refreshViewers();
             return;
@@ -138,17 +150,18 @@ public final class AnimationTickEngine {
         return false;
     }
 
-    private boolean shouldSkipForLowTps(long tick, long tickRate) {
-        if (!animationManager.getConfigManager().getSettings().reduceQualityOnLowTps()) {
+    private boolean shouldSkipForLowTps(long tick) {
+        if (!skipAnimationsOnLowTps) {
             return false;
         }
 
         if (tick >= nextTpsSampleTick) {
             double[] tps = Bukkit.getTPS();
-            lowTps = tps.length > 0 && tps[0] < 17.0D;
+            lowTps = tps.length > 0 && tps[0] < lowTpsThreshold;
             nextTpsSampleTick = tick + TPS_SAMPLE_INTERVAL_TICKS;
         }
-        return lowTps && tick % (tickRate * 2L) != 0L;
+
+        return lowTps;
     }
 
     private record AnimatedHologram(Hologram hologram, boolean requiresFullRefresh) {

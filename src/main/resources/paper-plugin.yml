@@ -46,6 +46,7 @@ permissions:
       axohologram.command.visibility: true
       axohologram.command.npc: true
       axohologram.command.action: true
+      axohologram.update.notify: true
   axohologram.create:
     description: Allows creating new holograms.
     default: op
@@ -105,4 +106,7 @@ permissions:
     default: op
   axohologram.command.action:
     description: Allows editing clickable hologram actions.
+    default: op
+  axohologram.update.notify:
+    description: Allows receiving update notifications when joining the server.
     default: op

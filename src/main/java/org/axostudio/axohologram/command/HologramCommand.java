@@ -9,6 +9,7 @@ import org.axostudio.axohologram.hologram.action.HologramActionExecutor;
 import org.axostudio.axohologram.hologram.action.HologramActionType;
 import org.axostudio.axohologram.hologram.action.HologramClickType;
 import org.axostudio.axohologram.hologram.billboard.Billboard;
+import org.axostudio.axohologram.hologram.impl.AxoHologramImpl;
 import org.axostudio.axohologram.hologram.line.HologramLine;
 import org.axostudio.axohologram.hologram.line.LineType;
 import org.axostudio.axohologram.hologram.line.impl.BlockLineImpl;
@@ -28,6 +29,7 @@ import org.bukkit.NamespacedKey;
 import org.bukkit.Registry;
 import org.bukkit.Sound;
 import org.bukkit.command.CommandSender;
+import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.TextDisplay;
 import org.bukkit.util.Vector;
@@ -40,13 +42,11 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
-import java.util.stream.Collectors;
-import java.util.stream.IntStream;
 
 public class HologramCommand implements BasicCommand {
 
     private static final List<String> PAGE_ACTIONS = List.of("add", "delete", "default");
-    private static final List<String> LINE_ACTIONS = List.of("add", "delete", "set", "offset", "height");
+    private static final List<String> LINE_ACTIONS = List.of("add", "delete", "set", "offset", "height", "scale");
     private static final List<String> NPC_ACTIONS = List.of("link", "unlink", "info");
     private static final List<String> ACTION_ACTIONS = List.of("add", "remove", "list");
     private static final List<String> VISIBILITY_MODES = List.of("all", "manual", "permission");
@@ -56,6 +56,64 @@ public class HologramCommand implements BasicCommand {
     private static final List<String> CLICK_TYPES = List.of("left", "right", "any_click");
     private static final List<String> PAGE_ACTION_VALUES = List.of("next", "previous", "1", "2");
     private static final List<String> COLOR_SUGGESTIONS = ColorUtil.commonColorSuggestions();
+    private static final List<String> ROOT_ADMIN_SUBCOMMANDS = List.of(
+            "version",
+            "ver",
+            "create",
+            "clone",
+            "delete",
+            "movehere",
+            "moveto",
+            "position",
+            "center",
+            "rotate",
+            "rotatepitch",
+            "offset",
+            "translate",
+            "teleport",
+            "list",
+            "import",
+            "reload",
+            "page",
+            "line",
+            "addline",
+            "setline",
+            "removeline",
+            "insertbefore",
+            "insertafter",
+            "permission",
+            "npc",
+            "linkwithnpc",
+            "unlinkwithnpc",
+            "viewdistance",
+            "visibilitydistance",
+            "visibility",
+            "scale",
+            "billboard",
+            "shadow",
+            "shadowstrength",
+            "shadowradius",
+            "background",
+            "textshadow",
+            "seethrough",
+            "brightness",
+            "align",
+            "textalignment",
+            "updatetextinterval",
+            "action"
+    );
+    private static final List<String> LINE_TYPE_NAMES = createLineTypeNames();
+    private static final Set<String> EXACT_LINE_TYPE_NAMES = Set.copyOf(LINE_TYPE_NAMES);
+    private static final List<String> BILLBOARD_NAMES = createBillboardNames();
+    private static final List<String> ACTION_TYPE_NAMES = createActionTypeNames();
+    private static final List<String> ITEM_MATERIAL_SUGGESTIONS = createMaterialSuggestions(false);
+    private static final List<String> BLOCK_MATERIAL_SUGGESTIONS = createMaterialSuggestions(true);
+    private static final List<String> DEFAULT_LINE_HEIGHT_SUGGESTIONS = List.of("default", "0", "0.25", "0.65", "1.0");
+    private static final List<String> DEFAULT_LINE_SCALE_SUGGESTIONS = List.of("default", "1", "1.5", "2");
+    private static final List<String> BRIGHTNESS_CHANNELS = List.of("block", "sky");
+    private static final List<String> SHADOW_VALUE_SUGGESTIONS = List.of("0.0", "0.5", "1.0");
+    private static final List<String> HOLOGRAM_SCALE_SUGGESTIONS = List.of("0.5", "1.0", "2.0");
+    private static final List<String> UPDATE_TEXT_INTERVAL_SUGGESTIONS = List.of("5", "20", "100", "default");
 
     private final AxoHologram plugin;
 
@@ -73,6 +131,7 @@ public class HologramCommand implements BasicCommand {
 
         switch (args[0].toLowerCase(Locale.ROOT)) {
             case "create" -> handleCreate(sender, args);
+            case "clone", "copy" -> handleClone(sender, args);
             case "delete" -> handleDelete(sender, args);
             case "move", "movehere" -> handleMoveHere(sender, args);
             case "moveto" -> handleMoveTo(sender, args);
@@ -187,6 +246,45 @@ public class HologramCommand implements BasicCommand {
 
         plugin.getHologramManager().deleteHologram(hologram.getId());
         MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("delete-success").replace("<hologram_id>", hologram.getId()));
+    }
+
+    private void handleClone(CommandSender sender, String[] args) {
+        if (!requirePermission(sender, "axohologram.create")) {
+            return;
+        }
+        if (args.length < 3) {
+            MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("clone-usage"));
+            return;
+        }
+
+        Hologram sourceHologram = requireHologram(sender, args[1]);
+        if (sourceHologram == null) {
+            return;
+        }
+
+        String targetId = args[2];
+        if (!plugin.getHologramManager().isValidHologramId(targetId)) {
+            MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("invalid-hologram-id").replace("<hologram_id>", targetId));
+            return;
+        }
+        if (plugin.getHologramManager().getHologram(targetId) != null) {
+            MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("create-fail-exists").replace("<hologram_id>", targetId));
+            return;
+        }
+
+        YamlConfiguration serialized = new YamlConfiguration();
+        sourceHologram.serialize(serialized);
+        Hologram clonedHologram = AxoHologramImpl.deserialize(targetId, serialized, plugin);
+        if (clonedHologram == null || !plugin.getHologramManager().registerImportedHologram(clonedHologram, false)) {
+            MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("clone-fail")
+                    .replace("<source_hologram_id>", sourceHologram.getId())
+                    .replace("<target_hologram_id>", targetId));
+            return;
+        }
+
+        MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("clone-success")
+                .replace("<source_hologram_id>", sourceHologram.getId())
+                .replace("<target_hologram_id>", targetId));
     }
 
     private void handleMoveHere(CommandSender sender, String[] args) {
@@ -747,6 +845,7 @@ public class HologramCommand implements BasicCommand {
             case "set" -> handleLineSet(sender, args, hologram, page, pageNumber);
             case "offset" -> handleLineOffset(sender, args, hologram, page, pageNumber);
             case "height" -> handleLineHeight(sender, args, hologram, page, pageNumber);
+            case "scale" -> handleLineScale(sender, args, hologram, page, pageNumber);
             default -> MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("line-usage"));
         }
     }
@@ -1064,6 +1163,58 @@ public class HologramCommand implements BasicCommand {
         MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("line-height-success")
                 .replace("<line_number>", String.valueOf(lineNumber))
                 .replace("<height>", displayHeight));
+    }
+
+    private void handleLineScale(CommandSender sender, String[] args, Hologram hologram, HologramPage page, int pageNumber) {
+        if (args.length < 6) {
+            MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("line-scale-usage"));
+            return;
+        }
+
+        Integer lineNumber = parsePositiveInt(sender, args[4], "invalid-line-number");
+        if (lineNumber == null) {
+            return;
+        }
+
+        HologramLine line = page.getLine(lineNumber - 1);
+        if (line == null) {
+            MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("line-not-found")
+                    .replace("<hologram_id>", hologram.getId())
+                    .replace("<page_number>", String.valueOf(pageNumber))
+                    .replace("<line_number>", String.valueOf(lineNumber)));
+            return;
+        }
+
+        String[] scaleArgs = Arrays.copyOfRange(args, 5, args.length);
+        if (line instanceof ItemLineImpl itemLine) {
+            if (!applyDisplayLineScale(sender, scaleArgs, itemLine::setScale, itemLine::clearScale)) {
+                return;
+            }
+            plugin.getHologramManager().saveHologram(hologram);
+            hologram.refreshViewers();
+            MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("line-scale-success")
+                    .replace("<line_number>", String.valueOf(lineNumber))
+                    .replace("<x>", formatDecimal(itemLine.getScaleX()))
+                    .replace("<y>", formatDecimal(itemLine.getScaleY()))
+                    .replace("<z>", formatDecimal(itemLine.getScaleZ())));
+            return;
+        }
+
+        if (line instanceof BlockLineImpl blockLine) {
+            if (!applyDisplayLineScale(sender, scaleArgs, blockLine::setScale, blockLine::clearScale)) {
+                return;
+            }
+            plugin.getHologramManager().saveHologram(hologram);
+            hologram.refreshViewers();
+            MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("line-scale-success")
+                    .replace("<line_number>", String.valueOf(lineNumber))
+                    .replace("<x>", formatDecimal(blockLine.getScaleX()))
+                    .replace("<y>", formatDecimal(blockLine.getScaleY()))
+                    .replace("<z>", formatDecimal(blockLine.getScaleZ())));
+            return;
+        }
+
+        MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("line-scale-unsupported"));
     }
 
     private void handlePermission(CommandSender sender, String[] args) {
@@ -1570,6 +1721,7 @@ public class HologramCommand implements BasicCommand {
         String subcommand = args[0].toLowerCase(Locale.ROOT);
         return switch (subcommand) {
             case "create" -> suggestCreateCommand(args);
+            case "clone", "copy" -> suggestCloneCommand(args);
             case "page" -> suggestPageCommand(args);
             case "line" -> suggestLineCommand(args);
             case "addline" -> suggestAddLineAlias(args);
@@ -1595,6 +1747,20 @@ public class HologramCommand implements BasicCommand {
         }
         if (args.length == 3 && isExactLineType(args[1])) {
             return List.of("<id>");
+        }
+        return List.of();
+    }
+
+    private Collection<String> suggestCloneCommand(String[] args) {
+        if (args.length == 2) {
+            return complete(args[1], hologramIds());
+        }
+        if (args.length == 3) {
+            String sourceId = args[1];
+            if (plugin.getHologramManager().getHologram(sourceId) == null) {
+                return List.of();
+            }
+            return complete(args[2], List.of(sourceId + "_copy"));
         }
         return List.of();
     }
@@ -1672,7 +1838,13 @@ public class HologramCommand implements BasicCommand {
                 }
                 case "height" -> {
                     if (resolveLine(page, args[4]) != null) {
-                        yield List.of("default", "0", "0.25", "0.65", "1.0");
+                        yield DEFAULT_LINE_HEIGHT_SUGGESTIONS;
+                    }
+                    yield complete(args[4], lineNumbers(page));
+                }
+                case "scale" -> {
+                    if (resolveLine(page, args[4]) != null) {
+                        yield DEFAULT_LINE_SCALE_SUGGESTIONS;
                     }
                     yield complete(args[4], lineNumbers(page));
                 }
@@ -1688,7 +1860,8 @@ public class HologramCommand implements BasicCommand {
                     yield line == null ? List.of() : contentSuggestionsForLine(line, args[5]);
                 }
                 case "offset" -> List.of("0");
-                case "height" -> complete(args[5], List.of("default", "0", "0.25", "0.65", "1.0"));
+                case "height" -> complete(args[5], DEFAULT_LINE_HEIGHT_SUGGESTIONS);
+                case "scale" -> complete(args[5], DEFAULT_LINE_SCALE_SUGGESTIONS);
                 default -> List.of();
             };
         }
@@ -1697,8 +1870,16 @@ public class HologramCommand implements BasicCommand {
             return List.of("0");
         }
 
+        if (args.length == 7 && action.equals("scale")) {
+            return List.of("1");
+        }
+
         if (args.length == 8 && action.equals("offset")) {
             return List.of("0");
+        }
+
+        if (args.length == 8 && action.equals("scale")) {
+            return List.of("1");
         }
 
         return List.of();
@@ -1816,7 +1997,7 @@ public class HologramCommand implements BasicCommand {
             return complete(args[2], hologramIds());
         }
         if (args.length == 4) {
-            return List.of("0.0", "0.5", "1.0");
+            return SHADOW_VALUE_SUGGESTIONS;
         }
         return List.of();
     }
@@ -1949,7 +2130,7 @@ public class HologramCommand implements BasicCommand {
             return complete(args[1], hologramIds());
         }
         if (args.length == 3) {
-            return complete(args[2], List.of("block", "sky"));
+            return complete(args[2], BRIGHTNESS_CHANNELS);
         }
         if (args.length == 4) {
             return List.of("0", "5", "10", "15");
@@ -1975,14 +2156,14 @@ public class HologramCommand implements BasicCommand {
             case "offset", "translate" -> args.length >= 3 && args.length <= 5 ? List.of("0") : List.of();
             case "viewdistance", "visibilitydistance" -> args.length == 3 ? List.of("32", "48", "64", "default") : List.of();
             case "visibility" -> args.length == 3 ? complete(args[2], VISIBILITY_MODES) : List.of();
-            case "scale" -> args.length == 3 ? List.of("0.5", "1.0", "2.0") : List.of();
+            case "scale" -> args.length == 3 ? HOLOGRAM_SCALE_SUGGESTIONS : List.of();
             case "billboard" -> args.length == 3 ? complete(args[2], billboardNames()) : List.of();
             case "background" -> args.length == 3 ? complete(args[2], COLOR_SUGGESTIONS) : List.of();
             case "textshadow" -> args.length == 3 ? complete(args[2], BOOLEAN_VALUES) : List.of();
             case "seethrough" -> args.length == 3 ? complete(args[2], BOOLEAN_VALUES) : List.of();
             case "align", "textalignment" -> args.length == 3 ? complete(args[2], ALIGNMENTS) : List.of();
-            case "shadowstrength", "shadowradius" -> args.length == 3 ? List.of("0.0", "0.5", "1.0") : List.of();
-            case "updatetextinterval" -> args.length == 3 ? List.of("5", "20", "100", "default") : List.of();
+            case "shadowstrength", "shadowradius" -> args.length == 3 ? SHADOW_VALUE_SUGGESTIONS : List.of();
+            case "updatetextinterval" -> args.length == 3 ? UPDATE_TEXT_INTERVAL_SUGGESTIONS : List.of();
             case "brightness" -> suggestBrightness(args);
             case "moveto" -> suggestMoveTo(source, args);
             default -> List.of();
@@ -2128,6 +2309,43 @@ public class HologramCommand implements BasicCommand {
         }
     }
 
+    private boolean applyDisplayLineScale(CommandSender sender, String[] args, LineScaleSetter setter, Runnable clearAction) {
+        if (args.length == 1 && args[0].equalsIgnoreCase("default")) {
+            clearAction.run();
+            return true;
+        }
+
+        try {
+            if (args.length == 1) {
+                float uniformScale = Float.parseFloat(args[0]);
+                if (uniformScale <= 0.0F) {
+                    MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("invalid-line-scale-number"));
+                    return false;
+                }
+                setter.set(uniformScale, uniformScale, uniformScale);
+                return true;
+            }
+
+            if (args.length == 3) {
+                float scaleX = Float.parseFloat(args[0]);
+                float scaleY = Float.parseFloat(args[1]);
+                float scaleZ = Float.parseFloat(args[2]);
+                if (scaleX <= 0.0F || scaleY <= 0.0F || scaleZ <= 0.0F) {
+                    MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("invalid-line-scale-number"));
+                    return false;
+                }
+                setter.set(scaleX, scaleY, scaleZ);
+                return true;
+            }
+        } catch (NumberFormatException ignored) {
+            MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("invalid-line-scale-number"));
+            return false;
+        }
+
+        MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("line-scale-usage"));
+        return false;
+    }
+
     private String joinArgs(String[] args, int startIndex) {
         if (startIndex >= args.length) {
             return "";
@@ -2141,6 +2359,11 @@ public class HologramCommand implements BasicCommand {
         }
         MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("player-only"));
         return null;
+    }
+
+    @FunctionalInterface
+    private interface LineScaleSetter {
+        void set(float scaleX, float scaleY, float scaleZ);
     }
 
     private boolean requirePermission(CommandSender sender, String permission, String... legacyPermissions) {
@@ -2295,10 +2518,22 @@ public class HologramCommand implements BasicCommand {
     }
 
     private List<String> complete(String input, List<String> options) {
-        String normalized = input.toLowerCase(Locale.ROOT);
-        return options.stream()
-                .filter(option -> option.toLowerCase(Locale.ROOT).startsWith(normalized))
-                .collect(Collectors.toList());
+        if (options.isEmpty()) {
+            return List.of();
+        }
+
+        String prefix = input == null ? "" : input;
+        if (prefix.isEmpty()) {
+            return options;
+        }
+
+        List<String> matches = new ArrayList<>(Math.min(options.size(), 16));
+        for (String option : options) {
+            if (option != null && option.regionMatches(true, 0, prefix, 0, prefix.length())) {
+                matches.add(option);
+            }
+        }
+        return matches.isEmpty() ? List.of() : matches;
     }
 
     private HologramPage resolvePage(Hologram hologram, String rawPage) {
@@ -2320,39 +2555,48 @@ public class HologramCommand implements BasicCommand {
     }
 
     private boolean isExactLineType(String rawType) {
-        return Arrays.stream(LineType.values()).anyMatch(type -> type.name().equalsIgnoreCase(rawType));
+        return rawType != null && EXACT_LINE_TYPE_NAMES.contains(rawType.toLowerCase(Locale.ROOT));
     }
 
     private List<String> lineTypeNames() {
-        return Arrays.stream(LineType.values())
-                .map(value -> value.name().toLowerCase(Locale.ROOT))
-                .collect(Collectors.toList());
+        return LINE_TYPE_NAMES;
     }
 
     private List<String> billboardNames() {
-        return Arrays.stream(Billboard.values())
-                .map(value -> value.name().toLowerCase(Locale.ROOT))
-                .collect(Collectors.toList());
+        return BILLBOARD_NAMES;
     }
 
     private List<String> actionTypeNames() {
-        return Arrays.stream(HologramActionType.values())
-                .map(HologramActionType::getDisplayName)
-                .collect(Collectors.toList());
+        return ACTION_TYPE_NAMES;
     }
 
     private List<String> actionIds(Hologram hologram, HologramClickType clickType) {
-        return IntStream.rangeClosed(1, hologram.getActions(clickType).size())
-                .mapToObj(String::valueOf)
-                .collect(Collectors.toList());
+        int size = hologram.getActions(clickType).size();
+        if (size <= 0) {
+            return List.of();
+        }
+
+        List<String> ids = new ArrayList<>(size);
+        for (int i = 1; i <= size; i++) {
+            ids.add(String.valueOf(i));
+        }
+        return ids;
     }
 
     private List<String> soundSuggestions(String input) {
-        return Registry.SOUNDS.keyStream()
-                .map(NamespacedKey::asString)
-                .filter(value -> value.startsWith(input.toLowerCase(Locale.ROOT)))
-                .limit(20)
-                .collect(Collectors.toList());
+        String prefix = input == null ? "" : input.toLowerCase(Locale.ROOT);
+        List<String> suggestions = new ArrayList<>(20);
+        for (Sound sound : Registry.SOUNDS) {
+            String value = sound.getKey().asString();
+            if (!value.startsWith(prefix)) {
+                continue;
+            }
+            suggestions.add(value);
+            if (suggestions.size() >= 20) {
+                break;
+            }
+        }
+        return suggestions.isEmpty() ? List.of() : suggestions;
     }
 
     private Collection<String> contentSuggestionsForType(String rawType, String input) {
@@ -2365,23 +2609,60 @@ public class HologramCommand implements BasicCommand {
     }
 
     private Collection<String> contentSuggestionsForLine(HologramLine line, String input) {
+        String currentContent = lineContent(line);
         if (line instanceof ItemLineImpl) {
-            return complete(input, materialSuggestions(false));
+            List<String> suggestions = new ArrayList<>();
+            addIfCompletes(suggestions, currentContent, input);
+            suggestions.addAll(complete(input, materialSuggestions(false)));
+            return suggestions;
         }
         if (line instanceof BlockLineImpl) {
-            return complete(input, materialSuggestions(true));
+            List<String> suggestions = new ArrayList<>();
+            addIfCompletes(suggestions, currentContent, input);
+            suggestions.addAll(complete(input, materialSuggestions(true)));
+            return suggestions;
         }
         if (line instanceof TextLineImpl) {
-            return List.of("<content>");
+            if (currentContent == null || currentContent.isEmpty()) {
+                return List.of("<content>");
+            }
+            return complete(input, List.of(currentContent));
         }
         return List.of();
     }
 
+    private void addIfCompletes(List<String> suggestions, String value, String input) {
+        if (value == null || value.isEmpty()) {
+            return;
+        }
+        String prefix = input == null ? "" : input;
+        if ((prefix.isEmpty() || value.regionMatches(true, 0, prefix, 0, prefix.length())) && !suggestions.contains(value)) {
+            suggestions.add(value);
+        }
+    }
+
+    private String lineContent(HologramLine line) {
+        if (line instanceof TextLineImpl textLine) {
+            return textLine.getContent();
+        }
+        if (line instanceof ItemLineImpl itemLine) {
+            return itemLine.getContent();
+        }
+        if (line instanceof BlockLineImpl blockLine) {
+            return blockLine.getContent();
+        }
+        return null;
+    }
+
     private List<String> availableRootSubcommands(CommandSender sender) {
+        if (sender.hasPermission("axohologram.admin")) {
+            return ROOT_ADMIN_SUBCOMMANDS;
+        }
+
         Set<String> commands = new LinkedHashSet<>();
         commands.addAll(List.of("version", "ver"));
         if (canUse(sender, "axohologram.create")) {
-            commands.add("create");
+            commands.addAll(List.of("create", "clone"));
         }
         if (canUse(sender, "axohologram.delete")) {
             commands.add("delete");
@@ -2440,30 +2721,46 @@ public class HologramCommand implements BasicCommand {
     }
 
     private List<String> hologramIds() {
-        return plugin.getHologramManager().getAllHolograms().stream()
-                .map(Hologram::getId)
-                .collect(Collectors.toList());
+        Collection<Hologram> holograms = plugin.getHologramManager().getAllHolograms();
+        if (holograms.isEmpty()) {
+            return List.of();
+        }
+
+        List<String> ids = new ArrayList<>(holograms.size());
+        for (Hologram hologram : holograms) {
+            ids.add(hologram.getId());
+        }
+        return ids;
     }
 
     private List<String> pageNumbers(Hologram hologram) {
-        return IntStream.rangeClosed(1, hologram.getPages().size())
-                .mapToObj(String::valueOf)
-                .collect(Collectors.toList());
+        int size = hologram.getPages().size();
+        if (size <= 0) {
+            return List.of();
+        }
+
+        List<String> pages = new ArrayList<>(size);
+        for (int i = 1; i <= size; i++) {
+            pages.add(String.valueOf(i));
+        }
+        return pages;
     }
 
     private List<String> lineNumbers(HologramPage page) {
-        return IntStream.rangeClosed(1, page.getLines().size())
-                .mapToObj(String::valueOf)
-                .collect(Collectors.toList());
+        int size = page.getLines().size();
+        if (size <= 0) {
+            return List.of();
+        }
+
+        List<String> lines = new ArrayList<>(size);
+        for (int i = 1; i <= size; i++) {
+            lines.add(String.valueOf(i));
+        }
+        return lines;
     }
 
     private List<String> materialSuggestions(boolean blocksOnly) {
-        return Arrays.stream(Material.values())
-                .filter(material -> !material.isAir())
-                .filter(material -> !blocksOnly || material.isBlock())
-                .filter(material -> blocksOnly || material.isItem())
-                .map(Material::name)
-                .collect(Collectors.toList());
+        return blocksOnly ? BLOCK_MATERIAL_SUGGESTIONS : ITEM_MATERIAL_SUGGESTIONS;
     }
 
     private List<String> availableNpcNames() {
@@ -2471,11 +2768,57 @@ public class HologramCommand implements BasicCommand {
             return List.of();
         }
 
-        return plugin.getNpcLinkService().getNpcNames().stream()
-                .toList();
+        return List.copyOf(plugin.getNpcLinkService().getNpcNames());
     }
 
     private String formatDecimal(double value) {
         return String.format(Locale.US, "%.2f", value);
+    }
+
+    private static List<String> createLineTypeNames() {
+        LineType[] values = LineType.values();
+        List<String> names = new ArrayList<>(values.length);
+        for (LineType value : values) {
+            names.add(value.name().toLowerCase(Locale.ROOT));
+        }
+        return List.copyOf(names);
+    }
+
+    private static List<String> createBillboardNames() {
+        Billboard[] values = Billboard.values();
+        List<String> names = new ArrayList<>(values.length);
+        for (Billboard value : values) {
+            names.add(value.name().toLowerCase(Locale.ROOT));
+        }
+        return List.copyOf(names);
+    }
+
+    private static List<String> createActionTypeNames() {
+        HologramActionType[] values = HologramActionType.values();
+        List<String> names = new ArrayList<>(values.length);
+        for (HologramActionType value : values) {
+            names.add(value.getDisplayName());
+        }
+        return List.copyOf(names);
+    }
+
+    private static List<String> createMaterialSuggestions(boolean blocksOnly) {
+        Material[] materials = Material.values();
+        List<String> suggestions = new ArrayList<>(materials.length);
+        for (Material material : materials) {
+            if (material.isAir()) {
+                continue;
+            }
+            if (blocksOnly) {
+                if (material.isBlock()) {
+                    suggestions.add(material.name());
+                }
+                continue;
+            }
+            if (material.isItem()) {
+                suggestions.add(material.name());
+            }
+        }
+        return List.copyOf(suggestions);
     }
 }

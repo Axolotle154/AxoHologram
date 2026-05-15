@@ -4,6 +4,7 @@ import org.axostudio.axohologram.hologram.Hologram;
 import org.axostudio.axohologram.hologram.line.HologramLine;
 import org.bukkit.Location;
 
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -36,6 +37,27 @@ public interface AxoHologramAPI {
     Hologram createHologram(String id, Location location, List<String> lines, boolean saveToYaml);
 
     /**
+     * Creates a persistent hologram from raw lines and saves it to YAML.
+     *
+     * @param id unique hologram id
+     * @param location hologram location with a loaded world
+     * @param lines raw lines to display on the first page
+     * @return created hologram
+     */
+    Hologram createHologram(String id, Location location, Collection<? extends HologramLine> lines);
+
+    /**
+     * Creates a hologram from raw lines.
+     *
+     * @param id unique hologram id
+     * @param location hologram location with a loaded world
+     * @param lines raw lines to display on the first page
+     * @param saveToYaml true for persistent holograms, false for runtime-only holograms
+     * @return created hologram
+     */
+    Hologram createHologram(String id, Location location, Collection<? extends HologramLine> lines, boolean saveToYaml);
+
+    /**
      * Creates a persistent item hologram and saves it to YAML.
      * <p>
      * The item content accepts material names and {@code PLAYER_HEAD(identifier)}.
@@ -59,6 +81,27 @@ public interface AxoHologramAPI {
      * @return created hologram
      */
     Hologram createItemHologram(String id, Location location, String itemContent, boolean saveToYaml);
+
+    /**
+     * Creates a persistent block hologram and saves it to YAML.
+     *
+     * @param id unique hologram id
+     * @param location hologram location with a loaded world
+     * @param blockContent block material or full block-data string to display
+     * @return created hologram
+     */
+    Hologram createBlockHologram(String id, Location location, String blockContent);
+
+    /**
+     * Creates a block hologram.
+     *
+     * @param id unique hologram id
+     * @param location hologram location with a loaded world
+     * @param blockContent block material or full block-data string to display
+     * @param saveToYaml true for persistent holograms, false for runtime-only holograms
+     * @return created hologram
+     */
+    Hologram createBlockHologram(String id, Location location, String blockContent, boolean saveToYaml);
 
     /**
      * Creates a temporary text hologram with an automatically generated id.
@@ -101,6 +144,46 @@ public interface AxoHologramAPI {
     Hologram createTemporaryHologram(String id, Location location, List<String> lines, long durationTicks);
 
     /**
+     * Creates a temporary hologram from raw lines with an automatically generated id.
+     *
+     * @param location hologram location with a loaded world
+     * @param lines raw lines to display on the first page
+     * @return created temporary hologram
+     */
+    Hologram createTemporaryHologram(Location location, Collection<? extends HologramLine> lines);
+
+    /**
+     * Creates a temporary hologram from raw lines. If id is null or blank, an id is generated.
+     *
+     * @param id optional unique hologram id
+     * @param location hologram location with a loaded world
+     * @param lines raw lines to display on the first page
+     * @return created temporary hologram
+     */
+    Hologram createTemporaryHologram(String id, Location location, Collection<? extends HologramLine> lines);
+
+    /**
+     * Creates a temporary hologram from raw lines and removes it after the given duration.
+     *
+     * @param location hologram location with a loaded world
+     * @param lines raw lines to display on the first page
+     * @param durationTicks lifetime in server ticks; values <= 0 do not schedule removal
+     * @return created temporary hologram
+     */
+    Hologram createTemporaryHologram(Location location, Collection<? extends HologramLine> lines, long durationTicks);
+
+    /**
+     * Creates a temporary hologram from raw lines and removes it after the given duration.
+     *
+     * @param id optional unique hologram id
+     * @param location hologram location with a loaded world
+     * @param lines raw lines to display on the first page
+     * @param durationTicks lifetime in server ticks; values <= 0 do not schedule removal
+     * @return created temporary hologram
+     */
+    Hologram createTemporaryHologram(String id, Location location, Collection<? extends HologramLine> lines, long durationTicks);
+
+    /**
      * Creates a temporary item hologram with an automatically generated id.
      *
      * @param location hologram location with a loaded world
@@ -139,6 +222,46 @@ public interface AxoHologramAPI {
      * @return created temporary hologram
      */
     Hologram createTemporaryItemHologram(String id, Location location, String itemContent, long durationTicks);
+
+    /**
+     * Creates a temporary block hologram with an automatically generated id.
+     *
+     * @param location hologram location with a loaded world
+     * @param blockContent block material or full block-data string to display
+     * @return created temporary hologram
+     */
+    Hologram createTemporaryBlockHologram(Location location, String blockContent);
+
+    /**
+     * Creates a temporary block hologram. If id is null or blank, an id is generated.
+     *
+     * @param id optional unique hologram id
+     * @param location hologram location with a loaded world
+     * @param blockContent block material or full block-data string to display
+     * @return created temporary hologram
+     */
+    Hologram createTemporaryBlockHologram(String id, Location location, String blockContent);
+
+    /**
+     * Creates a temporary block hologram and removes it after the given duration.
+     *
+     * @param location hologram location with a loaded world
+     * @param blockContent block material or full block-data string to display
+     * @param durationTicks lifetime in server ticks; values <= 0 do not schedule removal
+     * @return created temporary hologram
+     */
+    Hologram createTemporaryBlockHologram(Location location, String blockContent, long durationTicks);
+
+    /**
+     * Creates a temporary block hologram and removes it after the given duration.
+     *
+     * @param id optional unique hologram id
+     * @param location hologram location with a loaded world
+     * @param blockContent block material or full block-data string to display
+     * @param durationTicks lifetime in server ticks; values <= 0 do not schedule removal
+     * @return created temporary hologram
+     */
+    Hologram createTemporaryBlockHologram(String id, Location location, String blockContent, long durationTicks);
 
     /**
      * Deletes a persistent or temporary hologram.
@@ -196,6 +319,22 @@ public interface AxoHologramAPI {
     void updateLines(Hologram hologram, List<String> lines);
 
     /**
+     * Replaces the first page lines of a hologram with raw lines.
+     *
+     * @param id hologram id
+     * @param lines replacement raw lines
+     */
+    void updateLines(String id, Collection<? extends HologramLine> lines);
+
+    /**
+     * Replaces the first page lines of a hologram with raw lines.
+     *
+     * @param hologram hologram instance
+     * @param lines replacement raw lines
+     */
+    void updateLines(Hologram hologram, Collection<? extends HologramLine> lines);
+
+    /**
      * Replaces the first page with a single item line.
      *
      * @param id hologram id
@@ -210,6 +349,22 @@ public interface AxoHologramAPI {
      * @param itemContent item content to display
      */
     void updateItemLine(Hologram hologram, String itemContent);
+
+    /**
+     * Replaces the first page with a single block line.
+     *
+     * @param id hologram id
+     * @param blockContent block material or full block-data string to display
+     */
+    void updateBlockLine(String id, String blockContent);
+
+    /**
+     * Replaces the first page with a single block line.
+     *
+     * @param hologram hologram instance
+     * @param blockContent block material or full block-data string to display
+     */
+    void updateBlockLine(Hologram hologram, String blockContent);
 
     /**
      * Appends a text line to the first page of a hologram.
@@ -236,12 +391,32 @@ public interface AxoHologramAPI {
     void addLines(String id, List<String> lines);
 
     /**
+     * Appends text lines to the first page of a hologram using varargs.
+     *
+     * @param id hologram id
+     * @param lines text lines to append
+     */
+    default void addLines(String id, String... lines) {
+        addTextLines(id, Arrays.asList(lines));
+    }
+
+    /**
      * Appends text lines to the first page of a hologram.
      *
      * @param hologram hologram instance
      * @param lines text lines to append
      */
     void addLines(Hologram hologram, List<String> lines);
+
+    /**
+     * Appends text lines to the first page of a hologram using varargs.
+     *
+     * @param hologram hologram instance
+     * @param lines text lines to append
+     */
+    default void addLines(Hologram hologram, String... lines) {
+        addTextLines(hologram, Arrays.asList(lines));
+    }
 
     /**
      * Appends a text line to the first page of a hologram.
@@ -268,12 +443,32 @@ public interface AxoHologramAPI {
     void addTextLines(String id, List<String> lines);
 
     /**
+     * Appends text lines to the first page of a hologram using varargs.
+     *
+     * @param id hologram id
+     * @param lines text lines to append
+     */
+    default void addTextLines(String id, String... lines) {
+        addTextLines(id, Arrays.asList(lines));
+    }
+
+    /**
      * Appends text lines to the first page of a hologram.
      *
      * @param hologram hologram instance
      * @param lines text lines to append
      */
     void addTextLines(Hologram hologram, List<String> lines);
+
+    /**
+     * Appends text lines to the first page of a hologram using varargs.
+     *
+     * @param hologram hologram instance
+     * @param lines text lines to append
+     */
+    default void addTextLines(Hologram hologram, String... lines) {
+        addTextLines(hologram, Arrays.asList(lines));
+    }
 
     /**
      * Appends an item line to the first page of a hologram.
@@ -290,6 +485,22 @@ public interface AxoHologramAPI {
      * @param itemContent item content to append
      */
     void addItemLine(Hologram hologram, String itemContent);
+
+    /**
+     * Appends a block line to the first page of a hologram.
+     *
+     * @param id hologram id
+     * @param blockContent block material or full block-data string to append
+     */
+    void addBlockLine(String id, String blockContent);
+
+    /**
+     * Appends a block line to the first page of a hologram.
+     *
+     * @param hologram hologram instance
+     * @param blockContent block material or full block-data string to append
+     */
+    void addBlockLine(Hologram hologram, String blockContent);
 
     /**
      * Appends a raw line to the first page of a hologram.
@@ -316,6 +527,16 @@ public interface AxoHologramAPI {
     void addLines(String id, Collection<? extends HologramLine> lines);
 
     /**
+     * Appends raw lines to the first page of a hologram using varargs.
+     *
+     * @param id hologram id
+     * @param lines lines to append
+     */
+    default void addLines(String id, HologramLine... lines) {
+        addLines(id, Arrays.asList(lines));
+    }
+
+    /**
      * Appends raw lines to the first page of a hologram.
      *
      * @param hologram hologram instance
@@ -324,12 +545,38 @@ public interface AxoHologramAPI {
     void addLines(Hologram hologram, Collection<? extends HologramLine> lines);
 
     /**
+     * Appends raw lines to the first page of a hologram using varargs.
+     *
+     * @param hologram hologram instance
+     * @param lines lines to append
+     */
+    default void addLines(Hologram hologram, HologramLine... lines) {
+        addLines(hologram, Arrays.asList(lines));
+    }
+
+    /**
      * Creates an item line that can be passed to raw line APIs.
      *
      * @param itemContent item content to display
      * @return created item line
      */
     HologramLine createItemLine(String itemContent);
+
+    /**
+     * Creates a text line that can be passed to raw line APIs.
+     *
+     * @param textContent text content to display
+     * @return created text line
+     */
+    HologramLine createTextLine(String textContent);
+
+    /**
+     * Creates a block line that can be passed to raw line APIs.
+     *
+     * @param blockContent block material or full block-data string to display
+     * @return created block line
+     */
+    HologramLine createBlockLine(String blockContent);
 
     /**
      * Returns the internally resolved height of the hologram default page.

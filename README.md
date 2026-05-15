@@ -68,6 +68,7 @@ Comandos equivalentes:
 |---|---|
 | `/holograma create <text\|item\|block> <id>` | Crea un holograma nuevo |
 | `/holograma create <id>` | Compatibilidad legacy, crea un holograma `text` |
+| `/holograma clone <source_id> <new_id>` | Clona un holograma existente |
 | `/holograma delete <id>` | Elimina un holograma |
 | `/holograma list` | Lista hologramas cargados |
 | `/holograma reload` | Recarga configuracion, hologramas y animaciones |
@@ -107,6 +108,7 @@ Si un holograma esta vinculado a FancyNPCs, no puede moverse manualmente hasta h
 | `/holograma line delete <id> <page> <line>` | Elimina una linea |
 | `/holograma line remove <id> <page> <line>` | Alias legacy de `line delete` |
 | `/holograma line offset <id> <page> <line> <x> <y> <z>` | Cambia el offset de una linea |
+| `/holograma line scale <id> <page> <line> <factor\|x y z\|default>` | Cambia la escala de una linea `item` o `block` |
 
 Tipos de linea validos:
 
@@ -284,6 +286,26 @@ Si esta instalado y habilitado en config:
 
 Otros plugins pueden usar la API con `AxoHologram.getAPI()` o mediante `ServicesManager`.
 
+La API ya permite crear hologramas de texto, item, bloque y tambien hologramas mixtos usando lineas raw.
+
+Ejemplo rapido con lineas mixtas:
+
+```java
+AxoHologramAPI api = AxoHologram.getAPI();
+
+api.createHologram(
+        "afk_zone",
+        location,
+        List.of(
+                api.createTextLine("&8&m--------&r &c&l✪ &4&lZONA AFK &c&l✪ &r&8&m--------"),
+                api.createTextLine(""),
+                api.createItemLine("PAPER"),
+                api.createItemLine("PLAYER_HEAD(%player_name%)"),
+                api.createBlockLine("END_PORTAL_FRAME")
+        )
+);
+```
+
 Ejemplo para heads dinamicas desde API:
 
 ```java
@@ -317,7 +339,7 @@ Dependencia Maven recomendada si publicas AxoHologram en JitPack:
     <dependency>
         <groupId>com.github.AxoStudio</groupId>
         <artifactId>AxoHologram</artifactId>
-        <version>1.1.8-alpha</version>
+        <version>1.2.3-alpha</version>
         <scope>provided</scope>
     </dependency>
 </dependencies>
@@ -348,3 +370,76 @@ plugins/AxoHologram/holograms/rules.yml
 - Los hologramas simples de texto pueden renderizarse como un solo `TextDisplay`.
 - Los hologramas vinculados a FancyNPCs priorizan la posicion del NPC sobre movimiento manual.
 - Los hologramas temporales creados por API no se guardan en YAML.
+
+## Tipos de animaciones
+
+En la practica, el plugin trabaja con cuatro grupos de animaciones:
+
+- **Animaciones de texto**: cambian colores o el estilo del texto mientras se renderiza. En el ejemplo del proyecto vienen `rainbow`, `pulse`, `matrix` y `wave`.
+- **Animaciones de display**: mueven o transforman visualmente el holograma. En el archivo de ejemplo aparecen `float`, `spin`, `cinematic-idle` y `orbit`.
+- **Animaciones custom por frames**: te dejan definir cada frame a mano con `frame-animation`, util si quieres un ciclo muy concreto y no solo un efecto generico.
+- **Presets**: combinan una animacion de texto y una de display en una sola configuracion para reutilizarla rapido.
+
+Si quieres verlo rapido en `animations.yml`, un ejemplo real seria este:
+
+```yaml
+text:
+  wave_aqua:
+    type: wave
+
+display:
+  cinematic_idle:
+    type: cinematic-idle
+
+custom:
+  rainbow_cycle:
+    type: frame-animation
+
+presets:
+  store-title:
+    text-animation: pulse_blue
+    display-animation: cinematic_idle
+```
+
+## Ejemplos de comandos
+
+Algunos ejemplos reales para el dia a dia:
+
+```text
+/holograma create text bienvenida
+/holograma line set bienvenida 1 1 <gradient:#9D00FF:#00E5FF>Bienvenido al servidor</gradient>
+/holograma page add bienvenida
+/holograma line add bienvenida 2 text <yellow>/warp minas
+/holograma movehere bienvenida
+/holograma visibility bienvenida permission
+/holograma permission bienvenida axohologram.view.bienvenida
+/holograma create item tienda
+/holograma line set tienda 1 1 DIAMOND_SWORD
+/holograma line scale tienda 1 1 2
+/holograma create block portal
+/holograma line set portal 1 1 END_PORTAL_FRAME
+/holograma line scale portal 1 1 1.5 1.5 1.5
+/holograma npc link bienvenida Comerciante
+/holograma reload
+```
+
+En corto: `create` para crearlo, `line add` o `line set` para editarlo, `movehere` para colocarlo donde estas parado y `reload` cuando cambias archivos a mano y quieres recargar todo sin reiniciar el servidor.
+
+Tambien puedes usar el alias corto `addline`, que en la practica hace lo mismo que `line add`. Por ejemplo, si quieres meter una linea de texto con animacion inline en la pagina 1:
+
+```text
+/holo addline <ID> 1 text <#ANIM:&f:&b&l>Hello World</#ANIM>
+```
+
+Ese comando se interpreta asi:
+
+- `<ID>` es el id del holograma.
+- `1` es la pagina donde se agrega la linea.
+- `text` indica que la linea sera de texto.
+- `<#ANIM:&f:&b&l>Hello World</#ANIM>` aplica una animacion inline directamente sobre ese texto.
+
+Si prefieres la forma larga, seria equivalente a esto:
+
+```text
+/holograma line add <ID> 1 text <#ANIM:&f:&b&l>Hello World</#ANIM>
+```

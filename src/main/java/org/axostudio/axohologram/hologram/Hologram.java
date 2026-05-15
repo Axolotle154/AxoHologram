@@ -13,6 +13,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.entity.TextDisplay;
 import org.bukkit.util.Vector;
 
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 
@@ -42,6 +43,19 @@ public interface Hologram {
     void addLines(Collection<? extends HologramLine> lines);
     void addTextLine(String line);
     void addTextLines(Collection<String> lines);
+
+    default void addLines(String... lines) {
+        addTextLines(Arrays.asList(lines));
+    }
+
+    default void addTextLines(String... lines) {
+        addTextLines(Arrays.asList(lines));
+    }
+
+    default void addLines(HologramLine... lines) {
+        addLines(Arrays.asList(lines));
+    }
+
     int getDefaultPageIndex();
     void setDefaultPageIndex(int index);
 
