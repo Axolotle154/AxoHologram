@@ -500,14 +500,8 @@ public class HologramManager {
             refreshTask = null;
         }
         rebuildRuntimeCaches();
-        startRefreshTask();
-        if (visibilityTrackedHolograms.isEmpty() && visibilityTask != null) {
-            visibilityTask.cancel();
-            visibilityTask = null;
-        }
-        if (visibilityTask == null && !visibilityTrackedHolograms.isEmpty()) {
-            startVisibilityTask();
-        }
+        refreshRefreshTaskState();
+        refreshVisibilityTaskState();
         if (plugin.getAnimationManager() != null) {
             plugin.getAnimationManager().refreshTickTaskState();
         }
@@ -538,7 +532,7 @@ public class HologramManager {
         activeHolograms.put(player.getUniqueId(), hologram);
         if (periodicRefreshHolograms.contains(hologram)) {
             activePeriodicRefreshHolograms.add(hologram);
-            startRefreshTask();
+            refreshRefreshTaskState();
         }
     }
 
@@ -555,24 +549,19 @@ public class HologramManager {
 
     private void startTasks() {
         rebuildRuntimeCaches();
-        startVisibilityTask();
-        startRefreshTask();
+        refreshVisibilityTaskState();
+        refreshRefreshTaskState();
         if (plugin.getAnimationManager() != null) {
             plugin.getAnimationManager().refreshTickTaskState();
         }
     }
 
     private void startVisibilityTask() {
-        long interval = plugin.getConfigManager().getConfig().getLong(
-                "performance.visibility-check-interval-ticks",
-                plugin.getConfigManager().getConfig().getLong(
-                        "performance.visibility-refresh-interval-ticks",
-                        plugin.getConfigManager().getConfig().getLong(
-                                "performance.visibility-refresh-interval",
-                                plugin.getConfigManager().getConfig().getLong("general.visibility-check-interval", 20L)
-                        )
-                )
-        );
+        if (visibilityTask != null || !isPeriodicVisibilityTaskEnabled()) {
+            return;
+        }
+
+        long interval = resolveVisibilityCheckInterval();
         if (interval <= 0L) {
             return;
         }
@@ -581,7 +570,11 @@ public class HologramManager {
         }
 
         visibilityTask = plugin.getSchedulerUtil().runGlobalAtFixedRate(() -> {
-            if (visibilityTrackedHolograms.isEmpty() || Bukkit.getOnlinePlayers().isEmpty()) {
+            if (!isPeriodicVisibilityTaskEnabled() || visibilityTrackedHolograms.isEmpty()) {
+                cancelVisibilityTask();
+                return;
+            }
+            if (Bukkit.getOnlinePlayers().isEmpty()) {
                 return;
             }
 
@@ -594,12 +587,56 @@ public class HologramManager {
         }, interval, interval);
     }
 
+    private void refreshVisibilityTaskState() {
+        if (!isPeriodicVisibilityTaskEnabled() || visibilityTrackedHolograms.isEmpty()) {
+            cancelVisibilityTask();
+            return;
+        }
+        startVisibilityTask();
+    }
+
+    private void cancelVisibilityTask() {
+        if (visibilityTask != null) {
+            visibilityTask.cancel();
+            visibilityTask = null;
+        }
+    }
+
+    private boolean isPeriodicVisibilityTaskEnabled() {
+        if (plugin.getConfigManager().getConfig().contains("visibility.periodic-task-enabled")) {
+            return plugin.getConfigManager().getConfig().getBoolean("visibility.periodic-task-enabled");
+        }
+        if (plugin.getConfigManager().getConfig().contains("performance.visibility-periodic-task-enabled")) {
+            return plugin.getConfigManager().getConfig().getBoolean("performance.visibility-periodic-task-enabled");
+        }
+
+        String mode = plugin.getConfigManager().getConfig().getString("visibility.mode", "EVENT_DRIVEN");
+        return mode != null
+                && !mode.equalsIgnoreCase("EVENT_DRIVEN")
+                && !mode.equalsIgnoreCase("EVENT");
+    }
+
+    private long resolveVisibilityCheckInterval() {
+        return plugin.getConfigManager().getConfig().getLong(
+                "visibility.refresh-interval",
+                plugin.getConfigManager().getConfig().getLong(
+                        "performance.visibility-check-interval-ticks",
+                        plugin.getConfigManager().getConfig().getLong(
+                                "performance.visibility-refresh-interval-ticks",
+                                plugin.getConfigManager().getConfig().getLong(
+                                        "performance.visibility-refresh-interval",
+                                        plugin.getConfigManager().getConfig().getLong("general.visibility-check-interval", 100L)
+                                )
+                        )
+                )
+        );
+    }
+
     private void startRefreshTask() {
         if (refreshTask != null) {
             return;
         }
-        Collection<Hologram> refreshTargets = getRefreshLoopHolograms();
-        if (refreshTargets.isEmpty()) {
+        if (!hasVisibleDynamicRefreshWork()) {
             return;
         }
 
@@ -610,21 +647,19 @@ public class HologramManager {
 
         refreshTask = plugin.getSchedulerUtil().runGlobalAtFixedRate(() -> {
             Collection<Hologram> loopTargets = getRefreshLoopHolograms();
-            if (loopTargets.isEmpty()) {
+            if (loopTargets.isEmpty() || !hasVisibleDynamicRefreshWork()) {
                 stopRefreshTaskIfIdle();
                 return;
             }
             if (Bukkit.getOnlinePlayers().isEmpty()) {
-                if (shouldSkipRefreshWhenNoViewers()) {
-                    activePeriodicRefreshHolograms.clear();
-                }
+                activePeriodicRefreshHolograms.clear();
                 stopRefreshTaskIfIdle();
                 return;
             }
 
             long currentTick = Bukkit.getCurrentTick();
             for (Hologram hologram : loopTargets) {
-                if (shouldSkipRefreshWhenNoViewers() && !hasActiveViewers(hologram)) {
+                if (!hasActiveViewers(hologram)) {
                     activePeriodicRefreshHolograms.remove(hologram);
                     continue;
                 }
@@ -637,7 +672,7 @@ public class HologramManager {
                     continue;
                 }
                 if (hologram instanceof AxoHologramImpl axoHologram) {
-                    axoHologram.refreshDynamicViewers(true);
+                    axoHologram.refreshDynamicViewers(true, true);
                 } else {
                     hologram.refreshViewers();
                 }
@@ -647,7 +682,8 @@ public class HologramManager {
     }
 
     private long resolveRefreshSchedulerInterval() {
-        if (periodicRefreshHolograms.isEmpty()) {
+        Collection<Hologram> refreshTargets = getRefreshLoopHolograms();
+        if (refreshTargets.isEmpty()) {
             return -1L;
         }
 
@@ -662,7 +698,7 @@ public class HologramManager {
             interval = Long.MAX_VALUE;
         }
 
-        for (Hologram hologram : periodicRefreshHolograms) {
+        for (Hologram hologram : refreshTargets) {
             long hologramInterval = hologram.getUpdateTextInterval();
             if (hologramInterval > 0L) {
                 interval = Math.min(interval, hologramInterval);
@@ -681,6 +717,12 @@ public class HologramManager {
             return;
         }
 
+        UUID playerId = player.getUniqueId();
+        VisibilityState previousState = visibilityStates.get(playerId);
+        if (previousState != null && previousState.lastCheckTick() == currentTick && (!force || previousState.forced())) {
+            return;
+        }
+
         Location playerLocation = player.getLocation();
         String playerWorldName = playerLocation.getWorld() == null ? player.getWorld().getName() : playerLocation.getWorld().getName();
         for (Hologram hologram : visibilityTrackedHolograms) {
@@ -690,7 +732,7 @@ public class HologramManager {
             hologram.updateVisibility(player, force);
         }
 
-        visibilityStates.put(player.getUniqueId(), new VisibilityState(playerLocation.clone(), currentTick));
+        visibilityStates.put(playerId, VisibilityState.of(playerLocation, currentTick, force));
     }
 
     public void handlePlayerMovement(Player player, Location to) {
@@ -700,7 +742,7 @@ public class HologramManager {
 
         long currentTick = Bukkit.getCurrentTick();
         VisibilityState state = visibilityStates.get(player.getUniqueId());
-        if (state == null || !Objects.equals(state.location().getWorld(), to.getWorld())) {
+        if (state == null || !state.sameWorld(to)) {
             updateVisibilityForPlayer(player, false, currentTick);
             return;
         }
@@ -713,7 +755,7 @@ public class HologramManager {
             return;
         }
 
-        if (!hasRelevantMovement(state.location(), to)) {
+        if (!hasRelevantMovement(state, to)) {
             return;
         }
 
@@ -772,15 +814,15 @@ public class HologramManager {
         return hologramLocation.distanceSquared(playerLocation) <= (double) effectiveViewDistance * effectiveViewDistance;
     }
 
-    private boolean hasRelevantMovement(Location previous, Location current) {
+    private boolean hasRelevantMovement(VisibilityState previous, Location current) {
         MovementCheckMode mode = MovementCheckMode.fromConfig(plugin.getConfigManager().getConfig().getString("performance.movement-check-mode", "BLOCK"));
         return switch (mode) {
-            case CHUNK -> previous.getBlockX() >> 4 != current.getBlockX() >> 4
-                    || previous.getBlockZ() >> 4 != current.getBlockZ() >> 4;
-            case DISTANCE -> hasMovedRequiredDistance(previous, current);
-            case BLOCK -> previous.getBlockX() != current.getBlockX()
-                    || previous.getBlockY() != current.getBlockY()
-                    || previous.getBlockZ() != current.getBlockZ();
+            case CHUNK -> previous.chunkX() != current.getBlockX() >> 4
+                    || previous.chunkZ() != current.getBlockZ() >> 4;
+            case DISTANCE -> hasMovedRequiredDistance(previous.location(), current);
+            case BLOCK -> previous.blockX() != current.getBlockX()
+                    || previous.blockY() != current.getBlockY()
+                    || previous.blockZ() != current.getBlockZ();
         };
     }
 
@@ -797,25 +839,46 @@ public class HologramManager {
     }
 
     private boolean shouldRecheckVisibility(Player player, long currentTick) {
+        if (!isPeriodicVisibilityTaskEnabled()) {
+            return false;
+        }
+
         VisibilityState state = visibilityStates.get(player.getUniqueId());
-        if (state == null || !Objects.equals(state.location().getWorld(), player.getWorld())) {
+        if (state == null || !state.sameWorld(player.getLocation())) {
             return true;
         }
 
-        long interval = plugin.getConfigManager().getConfig().getLong(
-                "performance.visibility-check-interval-ticks",
-                plugin.getConfigManager().getConfig().getLong(
-                        "performance.visibility-refresh-interval-ticks",
-                        plugin.getConfigManager().getConfig().getLong(
-                                "performance.visibility-refresh-interval",
-                                plugin.getConfigManager().getConfig().getLong("general.visibility-check-interval", 20L)
-                        )
-                )
-        );
+        long interval = resolveVisibilityCheckInterval();
         return interval > 0L && currentTick - state.lastCheckTick() >= interval;
     }
 
-    private record VisibilityState(Location location, long lastCheckTick) {
+    private record VisibilityState(
+            Location location,
+            long lastCheckTick,
+            boolean forced,
+            int blockX,
+            int blockY,
+            int blockZ,
+            int chunkX,
+            int chunkZ
+    ) {
+        private static VisibilityState of(Location location, long lastCheckTick, boolean forced) {
+            Location snapshot = location.clone();
+            return new VisibilityState(
+                    snapshot,
+                    lastCheckTick,
+                    forced,
+                    snapshot.getBlockX(),
+                    snapshot.getBlockY(),
+                    snapshot.getBlockZ(),
+                    snapshot.getBlockX() >> 4,
+                    snapshot.getBlockZ() >> 4
+            );
+        }
+
+        private boolean sameWorld(Location other) {
+            return other != null && Objects.equals(location.getWorld(), other.getWorld());
+        }
     }
 
     private enum MovementCheckMode {
@@ -879,11 +942,30 @@ public class HologramManager {
     }
 
     private Collection<Hologram> getRefreshLoopHolograms() {
-        return shouldSkipRefreshWhenNoViewers() ? activePeriodicRefreshHolograms : periodicRefreshHolograms;
+        return activePeriodicRefreshHolograms;
     }
 
-    private boolean shouldSkipRefreshWhenNoViewers() {
-        return plugin.getConfigManager().getConfig().getBoolean("performance.skip-refresh-when-no-viewers", true);
+    private void refreshRefreshTaskState() {
+        if (!hasVisibleDynamicRefreshWork()) {
+            stopRefreshTaskIfIdle();
+            return;
+        }
+        startRefreshTask();
+    }
+
+    private boolean hasVisibleDynamicRefreshWork() {
+        if (activePeriodicRefreshHolograms.isEmpty()) {
+            return false;
+        }
+
+        for (Hologram hologram : new ArrayList<>(activePeriodicRefreshHolograms)) {
+            if (hologram == null || !hologram.isEnabled() || !hologram.requiresPeriodicRefresh() || !hasActiveViewers(hologram)) {
+                activePeriodicRefreshHolograms.remove(hologram);
+                continue;
+            }
+            return true;
+        }
+        return false;
     }
 
     private boolean hasActiveViewers(Hologram hologram) {
@@ -894,7 +976,7 @@ public class HologramManager {
     }
 
     private void stopRefreshTaskIfIdle() {
-        if (refreshTask != null && getRefreshLoopHolograms().isEmpty()) {
+        if (refreshTask != null && !hasVisibleDynamicRefreshWork()) {
             refreshTask.cancel();
             refreshTask = null;
         }

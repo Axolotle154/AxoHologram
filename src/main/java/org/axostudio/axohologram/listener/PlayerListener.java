@@ -4,6 +4,7 @@ import org.axostudio.axohologram.AxoHologram;
 import org.axostudio.axohologram.hologram.Hologram;
 import org.axostudio.axohologram.packet.HologramPacketManager;
 import org.axostudio.axohologram.util.MiniMessageUtil;
+import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -15,12 +16,17 @@ import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
 
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+
 public class PlayerListener implements Listener {
 
     private static final long[] JOIN_VISIBILITY_DELAYS = {5L, 20L, 60L};
     private static final long[] TRANSITION_VISIBILITY_DELAYS = {1L, 10L, 40L};
 
     private final AxoHologram plugin;
+    private final Map<UUID, Long> scheduledVisibilityRefreshes = new ConcurrentHashMap<>();
 
     public PlayerListener(AxoHologram plugin) {
         this.plugin = plugin;
@@ -46,6 +52,7 @@ public class PlayerListener implements Listener {
         }
         MiniMessageUtil.clearPlaceholderApiCache(player.getUniqueId());
         plugin.getHologramManager().clearVisibilityState(player.getUniqueId());
+        scheduledVisibilityRefreshes.remove(player.getUniqueId());
         // Clean up any remaining packet data for the player
         HologramPacketManager.destroyAllHologramLinesForPlayer(player);
     }
@@ -86,9 +93,31 @@ public class PlayerListener implements Listener {
     }
 
     private void scheduleVisibilityRefreshes(Player player, long... delays) {
+        if (plugin.getHologramManager().getAllHolograms().isEmpty()) {
+            return;
+        }
+
+        UUID playerId = player.getUniqueId();
+        long currentTick = Bukkit.getCurrentTick();
+        long minimumInterval = resolveVisibilityRefreshInterval();
         for (long delay : resolveVisibilityRefreshDelays(delays)) {
+            long targetTick = currentTick + Math.max(1L, delay);
+            Long scheduledTick = scheduledVisibilityRefreshes.get(playerId);
+            if (scheduledTick != null && scheduledTick >= currentTick && Math.abs(scheduledTick - targetTick) < minimumInterval) {
+                continue;
+            }
+            scheduledVisibilityRefreshes.put(playerId, targetTick);
             plugin.getSchedulerUtil().runAtEntityDelayed(player, () -> {
-                plugin.getHologramManager().updateVisibilityForPlayer(player, true);
+                if (!player.isOnline() || plugin.getHologramManager().getAllHolograms().isEmpty()) {
+                    scheduledVisibilityRefreshes.remove(playerId);
+                    return;
+                }
+
+                Long expectedTick = scheduledVisibilityRefreshes.get(playerId);
+                if (expectedTick != null && expectedTick <= Bukkit.getCurrentTick()) {
+                    scheduledVisibilityRefreshes.remove(playerId, expectedTick);
+                }
+                plugin.getHologramManager().updateVisibilityForPlayer(player, false);
             }, delay);
         }
     }
@@ -115,10 +144,14 @@ public class PlayerListener implements Listener {
     }
 
     private long[] resolveVisibilityRefreshDelays(long[] delays) {
-        long minimumInterval = plugin.getConfigManager().getConfig().getLong(
-                "performance.visibility-refresh-interval-ticks",
-                plugin.getConfigManager().getConfig().getLong("performance.visibility-refresh-interval", 20L)
-        );
+        if (delays.length == 0) {
+            return delays;
+        }
+        if (isEventDrivenVisibilityMode()) {
+            return new long[]{Math.max(1L, delays[0])};
+        }
+
+        long minimumInterval = resolveVisibilityRefreshInterval();
         if (minimumInterval <= 0L || delays.length <= 1) {
             return delays;
         }
@@ -134,5 +167,26 @@ public class PlayerListener implements Listener {
             previous = delay;
         }
         return resolved;
+    }
+
+    private long resolveVisibilityRefreshInterval() {
+        return plugin.getConfigManager().getConfig().getLong(
+                "performance.visibility-refresh-interval-ticks",
+                plugin.getConfigManager().getConfig().getLong("performance.visibility-refresh-interval", 100L)
+        );
+    }
+
+    private boolean isEventDrivenVisibilityMode() {
+        if (plugin.getConfigManager().getConfig().contains("visibility.periodic-task-enabled")) {
+            return !plugin.getConfigManager().getConfig().getBoolean("visibility.periodic-task-enabled");
+        }
+        if (plugin.getConfigManager().getConfig().contains("performance.visibility-periodic-task-enabled")) {
+            return !plugin.getConfigManager().getConfig().getBoolean("performance.visibility-periodic-task-enabled");
+        }
+
+        String mode = plugin.getConfigManager().getConfig().getString("visibility.mode", "EVENT_DRIVEN");
+        return mode == null
+                || mode.equalsIgnoreCase("EVENT_DRIVEN")
+                || mode.equalsIgnoreCase("EVENT");
     }
 }

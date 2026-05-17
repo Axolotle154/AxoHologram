@@ -51,7 +51,7 @@ public final class HologramPacketManager {
     private record LineKey(String hologramId, int pageIndex, int lineIndex) {
     }
 
-    private record TextLineState(Component text, float scale, float interactionWidth, float interactionHeight) {
+    private record TextLineState(Component text, float widthScale, float heightScale, int lineWidth, float interactionWidth, float interactionHeight) {
     }
 
     private record InteractionSize(float width, float height) {
@@ -78,7 +78,8 @@ public final class HologramPacketManager {
             boolean shadowed,
             boolean seeThrough,
             TextDisplay.TextAlignment alignment,
-            Color backgroundColor
+            Color backgroundColor,
+            int lineWidth
     ) {
     }
 
@@ -154,8 +155,12 @@ public final class HologramPacketManager {
         Component displayText = normalizeText(text);
         TextLineState previousTextState = getTextLineState(viewerId, key);
         boolean textChanged = previousTextState == null || !Objects.equals(previousTextState.text(), displayText);
-        boolean scaleChanged = previousTextState == null || Float.compare(previousTextState.scale(), resolveTextInteractionScale(hologram)) != 0;
-        TextLineState textState = textChanged || scaleChanged
+        TextRenderSettings textRenderSettings = resolveTextRenderSettings(hologram);
+        boolean renderSettingsChanged = previousTextState == null
+                || Float.compare(previousTextState.widthScale(), textRenderSettings.widthScale()) != 0
+                || Float.compare(previousTextState.heightScale(), textRenderSettings.heightScale()) != 0
+                || previousTextState.lineWidth() != textRenderSettings.lineWidth();
+        TextLineState textState = textChanged || renderSettingsChanged
                 ? createTextLineState(displayText, hologram)
                 : previousTextState;
         Location targetLocation = location.clone();
@@ -166,7 +171,7 @@ public final class HologramPacketManager {
             if (textChanged) {
                 display.text(displayText);
             }
-            if (textChanged || scaleChanged) {
+            if (textChanged || renderSettingsChanged) {
                 playerTexts(viewerId).put(key, textState);
             }
             syncInteraction(viewerId, hologram, pageIndex, lineIndex, renderedAnimation.location(),
@@ -432,6 +437,16 @@ public final class HologramPacketManager {
             hideMatchingEntities(player, viewerId, PLAYER_LINE_ENTITIES.get(viewerId), hologramId, true);
             hideMatchingEntities(player, viewerId, PLAYER_LINE_INTERACTIONS.get(viewerId), hologramId, false);
         });
+    }
+
+    public static void hideAllHologramLinesNow(Player player, String hologramId) {
+        if (player == null || hologramId == null) {
+            return;
+        }
+
+        UUID viewerId = player.getUniqueId();
+        hideMatchingEntities(player, viewerId, PLAYER_LINE_ENTITIES.get(viewerId), hologramId, true);
+        hideMatchingEntities(player, viewerId, PLAYER_LINE_INTERACTIONS.get(viewerId), hologramId, false);
     }
 
     public static boolean reshowAllHologramLines(Player player, String hologramId) {
@@ -739,7 +754,7 @@ public final class HologramPacketManager {
             display.setRotation(targetLocation.getYaw(), targetLocation.getPitch());
         }
 
-        DisplayState state = createDisplayState(hologram, line, renderedAnimation, billboard, flipItemModel);
+        DisplayState state = createDisplayState(display, hologram, line, renderedAnimation, billboard, flipItemModel);
         DisplayState previousState = DISPLAY_STATES.get(display.getUniqueId());
         if (Objects.equals(previousState, state)) {
             return;
@@ -862,7 +877,8 @@ public final class HologramPacketManager {
                 hologram.hasTextShadow(),
                 hologram.isSeeThrough(),
                 hologram.getAlignment(),
-                hologram.getBackgroundColor()
+                hologram.getBackgroundColor(),
+                resolveTextLineWidth()
         );
         TextStyleState previousState = TEXT_STYLE_STATES.get(display.getUniqueId());
         if (Objects.equals(previousState, state)) {
@@ -877,6 +893,9 @@ public final class HologramPacketManager {
         }
         if (previousState == null || previousState.alignment() != state.alignment()) {
             display.setAlignment(state.alignment());
+        }
+        if (previousState == null || previousState.lineWidth() != state.lineWidth()) {
+            display.setLineWidth(state.lineWidth());
         }
         if (previousState == null) {
             display.setTextOpacity((byte) 255);
@@ -904,24 +923,53 @@ public final class HologramPacketManager {
         }
 
         int lineCount = Math.max(1, lines.length);
-        float scale = resolveTextInteractionScale(hologram);
-        float width = Math.max(0.6F, (maxLineLength * 0.12F + 0.35F) * scale);
-        float height = Math.max(0.35F, (0.30F + (Math.max(0, lineCount - 1) * 0.25F)) * scale);
+        TextRenderSettings settings = resolveTextRenderSettings(hologram);
+        float width = Math.max(0.6F, (maxLineLength * 0.12F + 0.35F) * settings.widthScale());
+        float height = Math.max(0.35F, (0.30F + (Math.max(0, lineCount - 1) * 0.25F)) * settings.heightScale());
         return new InteractionSize(width, height);
     }
 
     private static TextLineState createTextLineState(Component text, Hologram hologram) {
         InteractionSize interactionSize = resolveTextInteractionSize(text, hologram);
+        TextRenderSettings settings = resolveTextRenderSettings(hologram);
         return new TextLineState(
                 normalizeText(text),
-                resolveTextInteractionScale(hologram),
+                settings.widthScale(),
+                settings.heightScale(),
+                settings.lineWidth(),
                 interactionSize.width(),
                 interactionSize.height()
         );
     }
 
-    private static float resolveTextInteractionScale(Hologram hologram) {
-        return Math.max(0.5F, hologram.getScale());
+    private static TextRenderSettings resolveTextRenderSettings(Hologram hologram) {
+        float textWidthScale = resolveTextHorizontalScale();
+        float widthScale = Math.max(0.5F, hologram.getScaleX()) * textWidthScale;
+        float heightScale = Math.max(0.5F, hologram.getScaleY());
+        return new TextRenderSettings(widthScale, heightScale, resolveTextLineWidth());
+    }
+
+    private static float resolveTextHorizontalScale() {
+        AxoHologram plugin = AxoHologram.getInstance();
+        double configured = plugin == null
+                ? 1.12D
+                : plugin.getConfigManager().getConfig().getDouble("general.defaults.text-rendering.horizontal-scale", 1.12D);
+        return clampFloat((float) configured, 0.25F, 4.0F);
+    }
+
+    private static int resolveTextLineWidth() {
+        AxoHologram plugin = AxoHologram.getInstance();
+        int configured = plugin == null
+                ? 2048
+                : plugin.getConfigManager().getConfig().getInt("general.defaults.text-rendering.line-width", 2048);
+        return Math.max(1, Math.min(configured, 8192));
+    }
+
+    private static boolean isCurrentTextLineState(TextLineState state, Hologram hologram) {
+        TextRenderSettings settings = resolveTextRenderSettings(hologram);
+        return Float.compare(state.widthScale(), settings.widthScale()) == 0
+                && Float.compare(state.heightScale(), settings.heightScale()) == 0
+                && state.lineWidth() == settings.lineWidth();
     }
 
     private static Component normalizeText(Component text) {
@@ -936,12 +984,14 @@ public final class HologramPacketManager {
     private static InteractionSize resolveExistingInteractionSize(UUID viewerId, LineKey key, Display display, Hologram hologram, HologramLine line) {
         if (display instanceof TextDisplay textDisplay) {
             TextLineState textState = getTextLineState(viewerId, key);
-            if (textState != null) {
+            if (textState != null && isCurrentTextLineState(textState, hologram)) {
                 return new InteractionSize(textState.interactionWidth(), textState.interactionHeight());
             }
 
             Component text = textDisplay.text();
-            return resolveTextInteractionSize(text, hologram);
+            TextLineState refreshedTextState = createTextLineState(text, hologram);
+            playerTexts(viewerId).put(key, refreshedTextState);
+            return new InteractionSize(refreshedTextState.interactionWidth(), refreshedTextState.interactionHeight());
         }
 
         float interactionSize = resolveDisplayInteractionSize(hologram, line);
@@ -956,8 +1006,9 @@ public final class HologramPacketManager {
         return Math.max(0.1F, Math.min(value, 32.0F));
     }
 
-    private static DisplayState createDisplayState(Hologram hologram, HologramLine line, RenderedDisplayAnimation renderedAnimation, Billboard billboard, boolean flipItemModel) {
+    private static DisplayState createDisplayState(Display display, Hologram hologram, HologramLine line, RenderedDisplayAnimation renderedAnimation, Billboard billboard, boolean flipItemModel) {
         float multiplier = Math.max(0.01F, renderedAnimation.scaleMultiplier());
+        float textHorizontalScale = display instanceof TextDisplay ? resolveTextHorizontalScale() : 1.0F;
         boolean brightnessEnabled = hologram.getBrightnessBlock() >= 0 || hologram.getBrightnessSky() >= 0;
         int brightnessBlock = brightnessEnabled ? (hologram.getBrightnessBlock() >= 0 ? hologram.getBrightnessBlock() : 15) : -1;
         int brightnessSky = brightnessEnabled ? (hologram.getBrightnessSky() >= 0 ? hologram.getBrightnessSky() : 15) : -1;
@@ -967,7 +1018,7 @@ public final class HologramPacketManager {
                 resolveViewRange(hologram),
                 hologram.getShadowRadius(),
                 hologram.getShadowStrength(),
-                hologram.getScaleX() * resolveLineScaleX(line) * multiplier,
+                hologram.getScaleX() * resolveLineScaleX(line) * multiplier * textHorizontalScale,
                 hologram.getScaleY() * resolveLineScaleY(line) * multiplier,
                 hologram.getScaleZ() * resolveLineScaleZ(line) * multiplier,
                 renderedAnimation.rollOffset(),
@@ -1139,6 +1190,16 @@ public final class HologramPacketManager {
                 && previousState.brightnessEnabled()
                 && previousState.brightnessBlock() == state.brightnessBlock()
                 && previousState.brightnessSky() == state.brightnessSky();
+    }
+
+    private static float clampFloat(float value, float min, float max) {
+        if (Float.isNaN(value) || Float.isInfinite(value)) {
+            return min;
+        }
+        return Math.max(min, Math.min(value, max));
+    }
+
+    private record TextRenderSettings(float widthScale, float heightScale, int lineWidth) {
     }
 
     private static org.axostudio.axohologram.util.SchedulerUtil scheduler() {

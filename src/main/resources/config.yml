@@ -8,6 +8,9 @@ general:
   visibility-check-interval: 20
   defaults:
     line-spacing: 0.25
+    text-rendering:
+      horizontal-scale: 1.12
+      line-width: 2048
     item-line-height: 0.65
     block-line-height: 1.0
     billboard: "center"

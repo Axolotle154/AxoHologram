@@ -90,8 +90,22 @@ public final class MiniMessageUtil {
         }
     }
 
+    public static String prepareDynamicText(String text, Player player, String hologramId) {
+        if (text == null || text.isEmpty()) {
+            return "";
+        }
+
+        String processedText = applyTextAnimations(text, player);
+        processedText = applyPlaceholderApi(processedText, player, hologramId);
+        return restoreProtectedAnimationPlaceholders(processedText);
+    }
+
     public static boolean hasPlaceholderApiPlaceholders(String text) {
         return isPlaceholderApiActive() && containsPlaceholderApiSyntax(text);
+    }
+
+    public static boolean hasMiniPlaceholders(String text) {
+        return isMiniPlaceholdersActive() && MiniPlaceholdersIntegration.hasPlaceholderSyntax(text);
     }
 
     public static boolean hasDynamicPlaceholders(String text) {
@@ -100,7 +114,7 @@ public final class MiniMessageUtil {
         }
 
         boolean hasPlaceholderApiSyntax = hasPlaceholderApiPlaceholders(text);
-        boolean hasMiniPlaceholdersSyntax = isMiniPlaceholdersActive() && MiniPlaceholdersIntegration.hasPlaceholderSyntax(text);
+        boolean hasMiniPlaceholdersSyntax = hasMiniPlaceholders(text);
         return hasPlaceholderApiSyntax || hasMiniPlaceholdersSyntax;
     }
 
