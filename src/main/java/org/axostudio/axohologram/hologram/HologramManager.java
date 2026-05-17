@@ -30,6 +30,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
@@ -44,6 +45,12 @@ public class HologramManager {
     private final Map<String, SchedulerUtil.TaskHandle> temporaryRemovalTasks = new ConcurrentHashMap<>();
     private final Map<UUID, VisibilityState> visibilityStates = new ConcurrentHashMap<>();
     private final Multimap<UUID, Hologram> activeHolograms = Multimaps.synchronizedSetMultimap(HashMultimap.create());
+    private final Set<Hologram> animatedHolograms = ConcurrentHashMap.newKeySet();
+    private final Set<Hologram> dynamicPlaceholderHolograms = ConcurrentHashMap.newKeySet();
+    private final Set<Hologram> periodicRefreshHolograms = ConcurrentHashMap.newKeySet();
+    private final Set<Hologram> activePeriodicRefreshHolograms = ConcurrentHashMap.newKeySet();
+    private final Set<Hologram> npcLinkedHolograms = ConcurrentHashMap.newKeySet();
+    private final Set<Hologram> visibilityTrackedHolograms = ConcurrentHashMap.newKeySet();
     private final File hologramFolder;
     private SchedulerUtil.TaskHandle visibilityTask;
     private SchedulerUtil.TaskHandle refreshTask;
@@ -62,6 +69,7 @@ public class HologramManager {
         holograms.clear();
         activeHolograms.clear();
         visibilityStates.clear();
+        clearRuntimeCaches();
         plugin.getLogger().info("Loading holograms...");
         createDefaultAnimationExampleIfMissing();
 
@@ -141,6 +149,7 @@ public class HologramManager {
             return null;
         }
         saveHologram(hologram);
+        restartRefreshTask();
 
         for (Player player : Bukkit.getOnlinePlayers()) {
             hologram.updateVisibility(player, false);
@@ -194,6 +203,26 @@ public class HologramManager {
 
     public Collection<Hologram> getAllHolograms() {
         return Collections.unmodifiableCollection(holograms.values());
+    }
+
+    public Collection<Hologram> getAnimatedHolograms() {
+        return Collections.unmodifiableSet(animatedHolograms);
+    }
+
+    public boolean hasAnimatedHolograms() {
+        return !animatedHolograms.isEmpty();
+    }
+
+    public Collection<Hologram> getDynamicPlaceholderHolograms() {
+        return Collections.unmodifiableSet(dynamicPlaceholderHolograms);
+    }
+
+    public Collection<Hologram> getPeriodicRefreshHolograms() {
+        return Collections.unmodifiableSet(periodicRefreshHolograms);
+    }
+
+    public Collection<Hologram> getNpcLinkedHolograms() {
+        return Collections.unmodifiableSet(npcLinkedHolograms);
     }
 
     public synchronized boolean registerImportedHologram(Hologram hologram, boolean overwrite) {
@@ -470,7 +499,18 @@ public class HologramManager {
             refreshTask.cancel();
             refreshTask = null;
         }
+        rebuildRuntimeCaches();
         startRefreshTask();
+        if (visibilityTrackedHolograms.isEmpty() && visibilityTask != null) {
+            visibilityTask.cancel();
+            visibilityTask = null;
+        }
+        if (visibilityTask == null && !visibilityTrackedHolograms.isEmpty()) {
+            startVisibilityTask();
+        }
+        if (plugin.getAnimationManager() != null) {
+            plugin.getAnimationManager().refreshTickTaskState();
+        }
     }
 
     public boolean isValidHologramId(String id) {
@@ -492,29 +532,56 @@ public class HologramManager {
     }
 
     public void onViewerAdded(Player player, Hologram hologram) {
+        if (player == null || hologram == null) {
+            return;
+        }
         activeHolograms.put(player.getUniqueId(), hologram);
+        if (periodicRefreshHolograms.contains(hologram)) {
+            activePeriodicRefreshHolograms.add(hologram);
+            startRefreshTask();
+        }
     }
 
     public void onViewerRemoved(Player player, Hologram hologram) {
+        if (player == null || hologram == null) {
+            return;
+        }
         activeHolograms.remove(player.getUniqueId(), hologram);
+        if (periodicRefreshHolograms.contains(hologram) && !hasActiveViewers(hologram)) {
+            activePeriodicRefreshHolograms.remove(hologram);
+            stopRefreshTaskIfIdle();
+        }
     }
 
     private void startTasks() {
+        rebuildRuntimeCaches();
         startVisibilityTask();
         startRefreshTask();
+        if (plugin.getAnimationManager() != null) {
+            plugin.getAnimationManager().refreshTickTaskState();
+        }
     }
 
     private void startVisibilityTask() {
         long interval = plugin.getConfigManager().getConfig().getLong(
                 "performance.visibility-check-interval-ticks",
-                plugin.getConfigManager().getConfig().getLong("general.visibility-check-interval", 20L)
+                plugin.getConfigManager().getConfig().getLong(
+                        "performance.visibility-refresh-interval-ticks",
+                        plugin.getConfigManager().getConfig().getLong(
+                                "performance.visibility-refresh-interval",
+                                plugin.getConfigManager().getConfig().getLong("general.visibility-check-interval", 20L)
+                        )
+                )
         );
         if (interval <= 0L) {
             return;
         }
+        if (visibilityTrackedHolograms.isEmpty()) {
+            return;
+        }
 
         visibilityTask = plugin.getSchedulerUtil().runGlobalAtFixedRate(() -> {
-            if (holograms.isEmpty() || Bukkit.getOnlinePlayers().isEmpty()) {
+            if (visibilityTrackedHolograms.isEmpty() || Bukkit.getOnlinePlayers().isEmpty()) {
                 return;
             }
 
@@ -528,39 +595,62 @@ public class HologramManager {
     }
 
     private void startRefreshTask() {
+        if (refreshTask != null) {
+            return;
+        }
+        Collection<Hologram> refreshTargets = getRefreshLoopHolograms();
+        if (refreshTargets.isEmpty()) {
+            return;
+        }
+
         long interval = resolveRefreshSchedulerInterval();
         if (interval <= 0L) {
             return;
         }
 
-        boolean skipWhenNoViewers = plugin.getConfigManager().getConfig().getBoolean("performance.skip-refresh-when-no-viewers", true);
-
         refreshTask = plugin.getSchedulerUtil().runGlobalAtFixedRate(() -> {
-            if (holograms.isEmpty() || Bukkit.getOnlinePlayers().isEmpty()) {
+            Collection<Hologram> loopTargets = getRefreshLoopHolograms();
+            if (loopTargets.isEmpty()) {
+                stopRefreshTaskIfIdle();
+                return;
+            }
+            if (Bukkit.getOnlinePlayers().isEmpty()) {
+                if (shouldSkipRefreshWhenNoViewers()) {
+                    activePeriodicRefreshHolograms.clear();
+                }
+                stopRefreshTaskIfIdle();
                 return;
             }
 
             long currentTick = Bukkit.getCurrentTick();
-            for (Hologram hologram : holograms.values()) {
-                if (skipWhenNoViewers && hologram instanceof AxoHologramImpl axoHologram && !axoHologram.hasActiveViewers()) {
+            for (Hologram hologram : loopTargets) {
+                if (shouldSkipRefreshWhenNoViewers() && !hasActiveViewers(hologram)) {
+                    activePeriodicRefreshHolograms.remove(hologram);
                     continue;
                 }
                 if (!hologram.requiresPeriodicRefresh()) {
+                    periodicRefreshHolograms.remove(hologram);
+                    activePeriodicRefreshHolograms.remove(hologram);
                     continue;
                 }
                 if (hologram instanceof AxoHologramImpl axoHologram && !axoHologram.shouldPeriodicRefresh(currentTick)) {
                     continue;
                 }
                 if (hologram instanceof AxoHologramImpl axoHologram) {
-                    axoHologram.refreshDynamicViewers();
+                    axoHologram.refreshDynamicViewers(true);
                 } else {
                     hologram.refreshViewers();
                 }
             }
+            stopRefreshTaskIfIdle();
         }, interval, interval);
     }
 
     private long resolveRefreshSchedulerInterval() {
+        if (periodicRefreshHolograms.isEmpty()) {
+            return -1L;
+        }
+
         long interval = plugin.getConfigManager().getConfig().getLong(
                 "performance.dynamic-refresh-interval-ticks",
                 plugin.getConfigManager().getConfig().getLong(
@@ -572,7 +662,7 @@ public class HologramManager {
             interval = Long.MAX_VALUE;
         }
 
-        for (Hologram hologram : holograms.values()) {
+        for (Hologram hologram : periodicRefreshHolograms) {
             long hologramInterval = hologram.getUpdateTextInterval();
             if (hologramInterval > 0L) {
                 interval = Math.min(interval, hologramInterval);
@@ -591,22 +681,16 @@ public class HologramManager {
             return;
         }
 
-        String playerWorldName = player.getWorld().getName();
-        for (Hologram hologram : holograms.values()) {
-            if (!hologram.isEnabled()) {
-                if (hologram.isViewing(player)) {
-                    hologram.hide(player);
-                }
+        Location playerLocation = player.getLocation();
+        String playerWorldName = playerLocation.getWorld() == null ? player.getWorld().getName() : playerLocation.getWorld().getName();
+        for (Hologram hologram : visibilityTrackedHolograms) {
+            if (!shouldProcessVisibility(hologram, player, playerWorldName, playerLocation, force)) {
                 continue;
             }
-
-            boolean sameWorld = Objects.equals(hologram.getWorldName(), playerWorldName);
-            if (sameWorld || force || hologram.isViewing(player)) {
-                hologram.updateVisibility(player, force);
-            }
+            hologram.updateVisibility(player, force);
         }
 
-        visibilityStates.put(player.getUniqueId(), new VisibilityState(player.getLocation().clone(), currentTick));
+        visibilityStates.put(player.getUniqueId(), new VisibilityState(playerLocation.clone(), currentTick));
     }
 
     public void handlePlayerMovement(Player player, Location to) {
@@ -621,11 +705,89 @@ public class HologramManager {
             return;
         }
 
+        long cooldownTicks = plugin.getConfigManager().getConfig().getLong(
+                "performance.movement-visibility-cooldown-ticks",
+                plugin.getConfigManager().getConfig().getLong("performance.movement-visibility-cooldown", 5L)
+        );
+        if (cooldownTicks > 0L && currentTick - state.lastCheckTick() < cooldownTicks) {
+            return;
+        }
+
+        if (!hasRelevantMovement(state.location(), to)) {
+            return;
+        }
+
+        updateVisibilityForPlayer(player, false, currentTick);
+    }
+
+    private boolean shouldProcessVisibility(Hologram hologram, Player player, String playerWorldName, Location playerLocation, boolean force) {
+        if (hologram == null) {
+            return false;
+        }
+
+        boolean viewing = hologram.isViewing(player);
+        if (!hologram.isEnabled()) {
+            return viewing;
+        }
+
+        boolean sameWorld = Objects.equals(hologram.getWorldName(), playerWorldName);
+        if (!sameWorld) {
+            return viewing;
+        }
+
+        boolean withinRange = isWithinQuickVisibilityRange(hologram, playerLocation);
+        if (!withinRange) {
+            return viewing;
+        }
+
+        if (force || !viewing) {
+            return true;
+        }
+
+        return hologram instanceof AxoHologramImpl axoHologram && axoHologram.needsVisibilityRefresh(player);
+    }
+
+    private boolean isWithinQuickVisibilityRange(Hologram hologram, Location playerLocation) {
+        if (playerLocation == null || playerLocation.getWorld() == null) {
+            return false;
+        }
+
+        Location hologramLocation = hologram.getLocation();
+        if (hologramLocation.getWorld() == null || !hologramLocation.getWorld().equals(playerLocation.getWorld())) {
+            return false;
+        }
+
+        int effectiveViewDistance = hologram.getViewDistance() > 0
+                ? hologram.getViewDistance()
+                : plugin.getConfigManager().getConfig().getInt("general.view-distance", 48);
+        int chunkRadius = Math.max(1, (int) Math.ceil(effectiveViewDistance / 16.0D) + 1);
+        int hologramChunkX = hologramLocation.getBlockX() >> 4;
+        int hologramChunkZ = hologramLocation.getBlockZ() >> 4;
+        int playerChunkX = playerLocation.getBlockX() >> 4;
+        int playerChunkZ = playerLocation.getBlockZ() >> 4;
+        if (Math.abs(hologramChunkX - playerChunkX) > chunkRadius || Math.abs(hologramChunkZ - playerChunkZ) > chunkRadius) {
+            return false;
+        }
+
+        return hologramLocation.distanceSquared(playerLocation) <= (double) effectiveViewDistance * effectiveViewDistance;
+    }
+
+    private boolean hasRelevantMovement(Location previous, Location current) {
+        MovementCheckMode mode = MovementCheckMode.fromConfig(plugin.getConfigManager().getConfig().getString("performance.movement-check-mode", "BLOCK"));
+        return switch (mode) {
+            case CHUNK -> previous.getBlockX() >> 4 != current.getBlockX() >> 4
+                    || previous.getBlockZ() >> 4 != current.getBlockZ() >> 4;
+            case DISTANCE -> hasMovedRequiredDistance(previous, current);
+            case BLOCK -> previous.getBlockX() != current.getBlockX()
+                    || previous.getBlockY() != current.getBlockY()
+                    || previous.getBlockZ() != current.getBlockZ();
+        };
+    }
+
+    private boolean hasMovedRequiredDistance(Location previous, Location current) {
         double threshold = plugin.getConfigManager().getConfig().getDouble("performance.visibility-move-distance-blocks", 1.5D);
         double thresholdSquared = threshold <= 0.0D ? 0.0D : threshold * threshold;
-        if (thresholdSquared == 0.0D || state.location().distanceSquared(to) >= thresholdSquared) {
-            updateVisibilityForPlayer(player, false, currentTick);
-        }
+        return thresholdSquared == 0.0D || previous.distanceSquared(current) >= thresholdSquared;
     }
 
     public void clearVisibilityState(UUID playerId) {
@@ -642,12 +804,109 @@ public class HologramManager {
 
         long interval = plugin.getConfigManager().getConfig().getLong(
                 "performance.visibility-check-interval-ticks",
-                plugin.getConfigManager().getConfig().getLong("general.visibility-check-interval", 20L)
+                plugin.getConfigManager().getConfig().getLong(
+                        "performance.visibility-refresh-interval-ticks",
+                        plugin.getConfigManager().getConfig().getLong(
+                                "performance.visibility-refresh-interval",
+                                plugin.getConfigManager().getConfig().getLong("general.visibility-check-interval", 20L)
+                        )
+                )
         );
         return interval > 0L && currentTick - state.lastCheckTick() >= interval;
     }
 
     private record VisibilityState(Location location, long lastCheckTick) {
+    }
+
+    private enum MovementCheckMode {
+        BLOCK,
+        CHUNK,
+        DISTANCE;
+
+        private static MovementCheckMode fromConfig(String rawMode) {
+            if (rawMode == null || rawMode.isBlank()) {
+                return BLOCK;
+            }
+            try {
+                return MovementCheckMode.valueOf(rawMode.trim().toUpperCase(java.util.Locale.ROOT));
+            } catch (IllegalArgumentException ignored) {
+                return BLOCK;
+            }
+        }
+    }
+
+    public void rebuildRuntimeCaches() {
+        clearRuntimeCaches();
+        for (Hologram hologram : holograms.values()) {
+            if (hologram instanceof AxoHologramImpl axoHologram) {
+                axoHologram.markPeriodicRefreshStateDirty();
+            }
+            registerRuntimeState(hologram);
+        }
+    }
+
+    private void registerRuntimeState(Hologram hologram) {
+        if (hologram == null) {
+            return;
+        }
+
+        if (isLinkedToNpc(hologram)) {
+            npcLinkedHolograms.add(hologram);
+        }
+
+        if (hologram.isEnabled()) {
+            visibilityTrackedHolograms.add(hologram);
+        }
+
+        if (hologram.requiresPeriodicRefresh()) {
+            periodicRefreshHolograms.add(hologram);
+            if (hasActiveViewers(hologram)) {
+                activePeriodicRefreshHolograms.add(hologram);
+            }
+            if (hologram instanceof AxoHologramImpl axoHologram && axoHologram.hasDynamicPlaceholderRefresh()) {
+                dynamicPlaceholderHolograms.add(hologram);
+            }
+        }
+
+        if (plugin.getAnimationManager() != null && plugin.getAnimationManager().hasAnimatedContent(hologram)) {
+            animatedHolograms.add(hologram);
+        }
+    }
+
+    private boolean isLinkedToNpc(Hologram hologram) {
+        String linkedNpc = hologram.getLinkedNpc();
+        return linkedNpc != null && !linkedNpc.isBlank();
+    }
+
+    private Collection<Hologram> getRefreshLoopHolograms() {
+        return shouldSkipRefreshWhenNoViewers() ? activePeriodicRefreshHolograms : periodicRefreshHolograms;
+    }
+
+    private boolean shouldSkipRefreshWhenNoViewers() {
+        return plugin.getConfigManager().getConfig().getBoolean("performance.skip-refresh-when-no-viewers", true);
+    }
+
+    private boolean hasActiveViewers(Hologram hologram) {
+        if (hologram instanceof AxoHologramImpl axoHologram) {
+            return axoHologram.hasActiveViewers();
+        }
+        return true;
+    }
+
+    private void stopRefreshTaskIfIdle() {
+        if (refreshTask != null && getRefreshLoopHolograms().isEmpty()) {
+            refreshTask.cancel();
+            refreshTask = null;
+        }
+    }
+
+    private void clearRuntimeCaches() {
+        animatedHolograms.clear();
+        dynamicPlaceholderHolograms.clear();
+        periodicRefreshHolograms.clear();
+        activePeriodicRefreshHolograms.clear();
+        npcLinkedHolograms.clear();
+        visibilityTrackedHolograms.clear();
     }
 
     private void createDefaultAnimationExampleIfMissing() {
@@ -700,5 +959,6 @@ public class HologramManager {
             refreshTask.cancel();
             refreshTask = null;
         }
+        clearRuntimeCaches();
     }
 }

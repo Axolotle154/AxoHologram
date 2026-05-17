@@ -4,6 +4,7 @@ import org.axostudio.axohologram.AxoHologram;
 import org.axostudio.axohologram.hologram.Hologram;
 import org.axostudio.axohologram.packet.HologramPacketManager;
 import org.axostudio.axohologram.util.MiniMessageUtil;
+import org.bukkit.Location;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
@@ -41,9 +42,7 @@ public class PlayerListener implements Listener {
     public void onPlayerQuit(PlayerQuitEvent event) {
         Player player = event.getPlayer();
         for (Hologram hologram : plugin.getHologramManager().getAllHolograms()) {
-            if (hologram.isViewing(player)) {
-                hologram.hide(player);
-            }
+            hologram.hide(player);
         }
         MiniMessageUtil.clearPlaceholderApiCache(player.getUniqueId());
         plugin.getHologramManager().clearVisibilityState(player.getUniqueId());
@@ -79,10 +78,7 @@ public class PlayerListener implements Listener {
         if (event.getTo() == null) {
             return;
         }
-        if (event.getFrom().getWorld() == event.getTo().getWorld()
-                && Double.compare(event.getFrom().getX(), event.getTo().getX()) == 0
-                && Double.compare(event.getFrom().getY(), event.getTo().getY()) == 0
-                && Double.compare(event.getFrom().getZ(), event.getTo().getZ()) == 0) {
+        if (!shouldHandleMovement(event.getFrom(), event.getTo())) {
             return;
         }
 
@@ -90,10 +86,53 @@ public class PlayerListener implements Listener {
     }
 
     private void scheduleVisibilityRefreshes(Player player, long... delays) {
-        for (long delay : delays) {
+        for (long delay : resolveVisibilityRefreshDelays(delays)) {
             plugin.getSchedulerUtil().runAtEntityDelayed(player, () -> {
                 plugin.getHologramManager().updateVisibilityForPlayer(player, true);
             }, delay);
         }
+    }
+
+    private boolean shouldHandleMovement(Location from, Location to) {
+        if (from.getWorld() != to.getWorld()) {
+            return true;
+        }
+        if (Double.compare(from.getX(), to.getX()) == 0
+                && Double.compare(from.getY(), to.getY()) == 0
+                && Double.compare(from.getZ(), to.getZ()) == 0) {
+            return false;
+        }
+
+        String mode = plugin.getConfigManager().getConfig().getString("performance.movement-check-mode", "BLOCK");
+        return switch (mode == null ? "BLOCK" : mode.trim().toUpperCase(java.util.Locale.ROOT)) {
+            case "CHUNK" -> from.getBlockX() >> 4 != to.getBlockX() >> 4
+                    || from.getBlockZ() >> 4 != to.getBlockZ() >> 4;
+            case "DISTANCE" -> true;
+            default -> from.getBlockX() != to.getBlockX()
+                    || from.getBlockY() != to.getBlockY()
+                    || from.getBlockZ() != to.getBlockZ();
+        };
+    }
+
+    private long[] resolveVisibilityRefreshDelays(long[] delays) {
+        long minimumInterval = plugin.getConfigManager().getConfig().getLong(
+                "performance.visibility-refresh-interval-ticks",
+                plugin.getConfigManager().getConfig().getLong("performance.visibility-refresh-interval", 20L)
+        );
+        if (minimumInterval <= 0L || delays.length <= 1) {
+            return delays;
+        }
+
+        long[] resolved = new long[delays.length];
+        long previous = Long.MIN_VALUE;
+        for (int i = 0; i < delays.length; i++) {
+            long delay = Math.max(1L, delays[i]);
+            if (previous != Long.MIN_VALUE && delay - previous < minimumInterval) {
+                delay = previous + minimumInterval;
+            }
+            resolved[i] = delay;
+            previous = delay;
+        }
+        return resolved;
     }
 }

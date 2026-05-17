@@ -422,6 +422,18 @@ public final class HologramPacketManager {
         destroyMatchingLines(viewerId, hologramId, null, null);
     }
 
+    public static void hideAllHologramLines(Player player, String hologramId) {
+        if (player == null || hologramId == null) {
+            return;
+        }
+
+        UUID viewerId = player.getUniqueId();
+        scheduler().runAtEntity(player, () -> {
+            hideMatchingEntities(player, viewerId, PLAYER_LINE_ENTITIES.get(viewerId), hologramId, true);
+            hideMatchingEntities(player, viewerId, PLAYER_LINE_INTERACTIONS.get(viewerId), hologramId, false);
+        });
+    }
+
     public static boolean reshowAllHologramLines(Player player, String hologramId) {
         if (player == null) {
             return false;
@@ -569,6 +581,32 @@ public final class HologramPacketManager {
             showEntity(viewerId, entityId);
         }
         return found && allValid;
+    }
+
+    private static void hideMatchingEntities(Player player, UUID viewerId, Map<LineKey, UUID> trackedEntities, String hologramId, boolean removeTextState) {
+        AxoHologram plugin = AxoHologram.getInstance();
+        if (plugin == null || trackedEntities == null || trackedEntities.isEmpty()) {
+            return;
+        }
+
+        for (Map.Entry<LineKey, UUID> entry : new HashSet<>(trackedEntities.entrySet())) {
+            LineKey key = entry.getKey();
+            if (!key.hologramId().equals(hologramId)) {
+                continue;
+            }
+
+            UUID entityId = entry.getValue();
+            Entity entity = Bukkit.getEntity(entityId);
+            if (entity == null || !entity.isValid()) {
+                removeTrackedLineEntity(trackedEntities, key);
+                if (removeTextState) {
+                    removeTextLineState(viewerId, key);
+                }
+                continue;
+            }
+
+            player.hideEntity(plugin, entity);
+        }
     }
 
     private static Map<LineKey, UUID> playerLines(UUID viewerId) {

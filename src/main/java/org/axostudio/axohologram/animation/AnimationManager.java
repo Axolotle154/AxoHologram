@@ -2,6 +2,9 @@ package org.axostudio.axohologram.animation;
 
 import org.axostudio.axohologram.AxoHologram;
 import org.axostudio.axohologram.hologram.Hologram;
+import org.axostudio.axohologram.hologram.line.HologramLine;
+import org.axostudio.axohologram.hologram.line.impl.TextLineImpl;
+import org.axostudio.axohologram.hologram.page.HologramPage;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
 
@@ -35,10 +38,13 @@ public final class AnimationManager {
         configManager.reloadAnimations();
         frameCache.clear();
         renderer.clearWarnings();
-        tickEngine.start();
         if (plugin.getHologramManager() != null) {
-            plugin.getHologramManager().getAllHolograms().forEach(Hologram::refreshViewers);
+            plugin.getHologramManager().rebuildRuntimeCaches();
+            tickEngine.refreshTaskState();
+            plugin.getHologramManager().getAnimatedHolograms().forEach(Hologram::refreshViewers);
+            return;
         }
+        tickEngine.start();
     }
 
     public AnimationConfigManager getConfigManager() {
@@ -65,6 +71,29 @@ public final class AnimationManager {
         return configManager.hasDisplayAnimation(name);
     }
 
+    public void refreshTickTaskState() {
+        tickEngine.refreshTaskState();
+    }
+
+    public boolean hasAnimatedContent(Hologram hologram) {
+        return requiresFullAnimationRefresh(hologram) || hasDisplayAnimation(hologram);
+    }
+
+    public boolean requiresFullAnimationRefresh(Hologram hologram) {
+        if (hologram == null || !hologram.isEnabled()) {
+            return false;
+        }
+
+        for (HologramPage page : hologram.getPages()) {
+            for (HologramLine line : page.getLines()) {
+                if (line instanceof TextLineImpl textLine && hasTextAnimationTags(textLine.getContent())) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     public String resolveDisplayAnimationName(Hologram hologram) {
         if (!hologram.isDisplayAnimationEnabled()) {
             return null;
@@ -75,5 +104,14 @@ public final class AnimationManager {
             return directAnimation;
         }
         return configManager.getDisplayAnimationForHologram(hologram.getId()).orElse(null);
+    }
+
+    private boolean hasDisplayAnimation(Hologram hologram) {
+        if (hologram == null || !hologram.isEnabled()) {
+            return false;
+        }
+
+        String displayAnimation = resolveDisplayAnimationName(hologram);
+        return displayAnimation != null && hasDisplayAnimation(displayAnimation);
     }
 }

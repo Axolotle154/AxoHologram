@@ -91,10 +91,7 @@ public final class MiniMessageUtil {
     }
 
     public static boolean hasPlaceholderApiPlaceholders(String text) {
-        return text != null
-                && !text.isBlank()
-                && isPlaceholderApiActive()
-                && PLACEHOLDER_API_PATTERN.matcher(text).find();
+        return isPlaceholderApiActive() && containsPlaceholderApiSyntax(text);
     }
 
     public static boolean hasDynamicPlaceholders(String text) {
@@ -187,7 +184,7 @@ public final class MiniMessageUtil {
     }
 
     private static String applyPlaceholderApi(String text, Player player, String hologramId) {
-        if (player == null || !isPlaceholderApiActive()) {
+        if (player == null || !isPlaceholderApiActive() || !containsPlaceholderApiSyntax(text)) {
             return text;
         }
 
@@ -256,6 +253,12 @@ public final class MiniMessageUtil {
                 && plugin.getConfigManager() != null
                 && plugin.getConfigManager().getConfig().getBoolean("integrations.placeholderapi", true)
                 && Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI");
+    }
+
+    private static boolean containsPlaceholderApiSyntax(String text) {
+        return text != null
+                && !text.isBlank()
+                && PLACEHOLDER_API_PATTERN.matcher(text).find();
     }
 
     private static boolean isMiniPlaceholdersActive() {

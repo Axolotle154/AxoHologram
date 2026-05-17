@@ -4,25 +4,18 @@ import org.axostudio.axohologram.AxoHologram;
 import org.axostudio.axohologram.hologram.Hologram;
 import org.axostudio.axohologram.hologram.HologramManager;
 import org.axostudio.axohologram.hologram.impl.AxoHologramImpl;
-import org.axostudio.axohologram.hologram.line.HologramLine;
-import org.axostudio.axohologram.hologram.line.impl.TextLineImpl;
-import org.axostudio.axohologram.hologram.page.HologramPage;
 import org.axostudio.axohologram.util.SchedulerUtil;
 import org.bukkit.Bukkit;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.util.Collection;
 
 public final class AnimationTickEngine {
 
     private static final long TPS_SAMPLE_INTERVAL_TICKS = 20L;
-    private static final long ANIMATION_SCAN_INTERVAL_TICKS = 20L;
 
     private final AxoHologram plugin;
     private final AnimationManager animationManager;
     private volatile long currentTick;
-    private volatile List<AnimatedHologram> animatedHolograms = List.of();
-    private volatile long nextAnimationScanTick;
     private volatile long nextTpsSampleTick;
     private volatile boolean lowTps;
     private volatile boolean skipAnimationsOnLowTps;
@@ -39,12 +32,15 @@ public final class AnimationTickEngine {
     public void start() {
         stop();
         currentTick = 0L;
-        animatedHolograms = List.of();
-        nextAnimationScanTick = 0L;
         nextTpsSampleTick = 0L;
         lowTps = false;
+        refreshTaskState();
+    }
+
+    public void refreshTaskState() {
         AnimationSettings settings = animationManager.getConfigManager().getSettings();
-        if (!settings.enabled()) {
+        if (!settings.enabled() || !hasAnimatedHolograms()) {
+            stop();
             return;
         }
 
@@ -52,7 +48,9 @@ public final class AnimationTickEngine {
         skipAnimationsOnLowTps = plugin.getConfigManager().getConfig().getBoolean("performance.low-tps-animation-skip", settings.reduceQualityOnLowTps());
         skipRefreshWhenNoViewers = plugin.getConfigManager().getConfig().getBoolean("performance.skip-refresh-when-no-viewers", true);
         lowTpsThreshold = plugin.getConfigManager().getConfig().getDouble("performance.low-tps-threshold", 17.0D);
-        task = plugin.getSchedulerUtil().runGlobalAtFixedRate(this::tick, tickRate, tickRate);
+        if (task == null) {
+            task = plugin.getSchedulerUtil().runGlobalAtFixedRate(this::tick, tickRate, tickRate);
+        }
     }
 
     public void stop() {
@@ -67,36 +65,41 @@ public final class AnimationTickEngine {
     }
 
     private void tick() {
+        HologramManager hologramManager = plugin.getHologramManager();
+        if (hologramManager == null) {
+            return;
+        }
+
+        Collection<Hologram> animatedHolograms = hologramManager.getAnimatedHolograms();
+        if (animatedHolograms.isEmpty()) {
+            refreshTaskState();
+            return;
+        }
+
         long tick = currentTick + tickRate;
         currentTick = tick;
         if (shouldSkipForLowTps(tick)) {
             return;
         }
 
-        HologramManager hologramManager = plugin.getHologramManager();
-        if (hologramManager == null) {
-            return;
-        }
-
-        if (tick >= nextAnimationScanTick) {
-            refreshAnimatedHolograms(hologramManager, tick);
-        }
-
-        for (AnimatedHologram animatedHologram : animatedHolograms) {
-            Hologram hologram = animatedHologram.hologram();
+        for (Hologram hologram : animatedHolograms) {
             if (hologram.isEnabled()) {
-                refreshAnimatedHologram(animatedHologram);
+                refreshAnimatedHologram(hologram);
             }
         }
     }
 
-    private void refreshAnimatedHologram(AnimatedHologram animatedHologram) {
-        Hologram hologram = animatedHologram.hologram();
+    private boolean hasAnimatedHolograms() {
+        HologramManager hologramManager = plugin.getHologramManager();
+        return hologramManager != null && hologramManager.hasAnimatedHolograms();
+    }
+
+    private void refreshAnimatedHologram(Hologram hologram) {
         if (skipRefreshWhenNoViewers && hologram instanceof AxoHologramImpl axoHologram && !axoHologram.hasActiveViewers()) {
             return;
         }
 
-        if (animatedHologram.requiresFullRefresh()) {
+        if (animationManager.requiresFullAnimationRefresh(hologram)) {
             hologram.refreshViewers();
             return;
         }
@@ -107,47 +110,6 @@ public final class AnimationTickEngine {
         }
 
         hologram.refreshViewers();
-    }
-
-    private void refreshAnimatedHolograms(HologramManager hologramManager, long tick) {
-        List<AnimatedHologram> refreshedHolograms = new ArrayList<>();
-        for (Hologram hologram : hologramManager.getAllHolograms()) {
-            AnimationMode animationMode = resolveAnimationMode(hologram);
-            if (animationMode != AnimationMode.NONE) {
-                refreshedHolograms.add(new AnimatedHologram(hologram, animationMode == AnimationMode.FULL_REFRESH));
-            }
-        }
-
-        animatedHolograms = refreshedHolograms.isEmpty() ? List.of() : List.copyOf(refreshedHolograms);
-        nextAnimationScanTick = tick + ANIMATION_SCAN_INTERVAL_TICKS;
-    }
-
-    private AnimationMode resolveAnimationMode(Hologram hologram) {
-        if (!hologram.isEnabled()) {
-            return AnimationMode.NONE;
-        }
-
-        if (hasTextAnimation(hologram)) {
-            return AnimationMode.FULL_REFRESH;
-        }
-
-        return hasDisplayAnimation(hologram) ? AnimationMode.DISPLAY_STATE : AnimationMode.NONE;
-    }
-
-    private boolean hasDisplayAnimation(Hologram hologram) {
-        String displayAnimation = animationManager.resolveDisplayAnimationName(hologram);
-        return displayAnimation != null && animationManager.hasDisplayAnimation(displayAnimation);
-    }
-
-    private boolean hasTextAnimation(Hologram hologram) {
-        for (HologramPage page : hologram.getPages()) {
-            for (HologramLine line : page.getLines()) {
-                if (line instanceof TextLineImpl textLine && animationManager.hasTextAnimationTags(textLine.getContent())) {
-                    return true;
-                }
-            }
-        }
-        return false;
     }
 
     private boolean shouldSkipForLowTps(long tick) {
@@ -162,14 +124,5 @@ public final class AnimationTickEngine {
         }
 
         return lowTps;
-    }
-
-    private record AnimatedHologram(Hologram hologram, boolean requiresFullRefresh) {
-    }
-
-    private enum AnimationMode {
-        NONE,
-        DISPLAY_STATE,
-        FULL_REFRESH
     }
 }

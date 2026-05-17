@@ -1,4 +1,4 @@
-Copyright (c) 2026 AxoStudio
+Copyright (c) 2026 AxoStudio/Axolotle1f
 
 Este plugin es propiedad privada.
 Se permite su uso en servidores de Minecraft.
