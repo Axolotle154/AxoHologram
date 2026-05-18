@@ -10,6 +10,7 @@ import de.oliver.fancynpcs.api.events.NpcRemoveEvent;
 import de.oliver.fancynpcs.api.events.NpcsLoadedEvent;
 import org.axostudio.axohologram.AxoHologram;
 import org.axostudio.axohologram.integration.npc.NpcHook;
+import org.axostudio.axohologram.integration.npc.NpcHook.NpcLocationUpdate;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.event.EventHandler;
@@ -224,6 +225,4 @@ public final class FancyNpcHook implements NpcHook, Listener {
         return List.copyOf(identifiers);
     }
 
-    public record NpcLocationUpdate(Collection<String> identifiers, Location location) {
-    }
 }

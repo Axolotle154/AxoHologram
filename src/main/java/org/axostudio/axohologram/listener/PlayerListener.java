@@ -15,6 +15,7 @@ import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
+import org.bukkit.event.server.PluginEnableEvent;
 
 import java.util.Map;
 import java.util.UUID;
@@ -23,6 +24,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class PlayerListener implements Listener {
 
     private static final long[] JOIN_VISIBILITY_DELAYS = {5L, 20L, 60L};
+    private static final long[] JOIN_PLACEHOLDER_REFRESH_DELAYS = {40L, 100L};
     private static final long[] TRANSITION_VISIBILITY_DELAYS = {1L, 10L, 40L};
 
     private final AxoHologram plugin;
@@ -37,11 +39,17 @@ public class PlayerListener implements Listener {
         Player player = event.getPlayer();
         HologramPacketManager.hideAllTrackedEntitiesForPlayer(player);
         scheduleVisibilityRefreshes(player, JOIN_VISIBILITY_DELAYS);
+        schedulePlaceholderRefreshes(player, JOIN_PLACEHOLDER_REFRESH_DELAYS);
         plugin.getSchedulerUtil().runAtEntityDelayed(player, () -> {
             if (plugin.getUpdateChecker() != null) {
                 plugin.getUpdateChecker().notifyPlayer(player);
             }
         }, 40L);
+    }
+
+    @EventHandler
+    public void onPluginEnable(PluginEnableEvent event) {
+        plugin.handleOptionalPluginEnabled(event.getPlugin().getName());
     }
 
     @EventHandler
@@ -119,6 +127,24 @@ public class PlayerListener implements Listener {
                 }
                 plugin.getHologramManager().updateVisibilityForPlayer(player, false);
             }, delay);
+        }
+    }
+
+    private void schedulePlaceholderRefreshes(Player player, long... delays) {
+        if (plugin.getHologramManager().getAllHolograms().isEmpty()) {
+            return;
+        }
+
+        UUID playerId = player.getUniqueId();
+        for (long delay : delays) {
+            plugin.getSchedulerUtil().runAtEntityDelayed(player, () -> {
+                if (!player.isOnline() || plugin.getHologramManager().getAllHolograms().isEmpty()) {
+                    return;
+                }
+
+                MiniMessageUtil.clearPlaceholderApiCache(playerId);
+                plugin.getHologramManager().updateVisibilityForPlayer(player, true);
+            }, Math.max(1L, delay));
         }
     }
 

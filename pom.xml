@@ -6,7 +6,7 @@
 
     <groupId>org.axostudio</groupId>
     <artifactId>AxoHologram</artifactId>
-    <version>1.2.5-alpha</version>
+    <version>1.2.6-alpha</version>
     <packaging>jar</packaging>
 
     <name>AxoHologram</name>
@@ -83,6 +83,12 @@
             <groupId>de.oliver</groupId>
             <artifactId>FancyNpcs</artifactId>
             <version>2.9.2</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.github.Axolotle154</groupId>
+            <artifactId>AxoNpcs</artifactId>
+            <version>1.0.9-alpha</version>
             <scope>provided</scope>
         </dependency>
         <dependency>

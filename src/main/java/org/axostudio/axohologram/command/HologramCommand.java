@@ -659,7 +659,11 @@ public class HologramCommand implements BasicCommand {
             return;
         }
         if (plugin.getNpcLinkService() == null || !plugin.getNpcLinkService().isAvailable()) {
-            MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("fancynpcs-unavailable"));
+            String unavailableMessage = plugin.getConfigManager().getMessages().getString(
+                    "npc-plugin-unavailable",
+                    plugin.getConfigManager().getMessages().getString("fancynpcs-unavailable")
+            );
+            MessageUtil.sendMessage(sender, unavailableMessage);
             return;
         }
 
@@ -674,8 +678,14 @@ public class HologramCommand implements BasicCommand {
             return;
         }
 
-        MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("npc-link-success")
+        String npcPlugin = plugin.getNpcLinkService().getProviderName(npcName);
+        String successMessage = plugin.getConfigManager().getMessages().getString(
+                "npc-link-success-provider",
+                "<prefix><green>Linked hologram '<hologram_id>' to <npc_plugin> NPC '<npc_name>'.</green>"
+        );
+        MessageUtil.sendMessage(sender, successMessage
                 .replace("<hologram_id>", hologram.getId())
+                .replace("<npc_plugin>", npcPlugin)
                 .replace("<npc_name>", npcName));
     }
 
@@ -725,8 +735,14 @@ public class HologramCommand implements BasicCommand {
         }
 
         if (plugin.getNpcLinkService() != null && plugin.getNpcLinkService().isLinkedNpcAvailable(hologram)) {
-            MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("npc-info-linked")
+            String npcPlugin = plugin.getNpcLinkService().getProviderName(linkedNpc);
+            String linkedMessage = plugin.getConfigManager().getMessages().getString(
+                    "npc-info-linked-provider",
+                    "<prefix><aqua>Hologram '<hologram_id>' is linked to <npc_plugin> NPC '<npc_name>'.</aqua>"
+            );
+            MessageUtil.sendMessage(sender, linkedMessage
                     .replace("<hologram_id>", hologram.getId())
+                    .replace("<npc_plugin>", npcPlugin)
                     .replace("<npc_name>", linkedNpc));
             return;
         }

@@ -10,8 +10,11 @@ import org.axostudio.axohologram.command.HologramCommand;
 import org.axostudio.axohologram.config.ConfigManager;
 import org.axostudio.axohologram.hologram.HologramManager;
 import org.axostudio.axohologram.importer.ImportManager;
+import org.axostudio.axohologram.integration.axonpcs.AxoNpcHook;
 import org.axostudio.axohologram.integration.fancynpcs.FancyNpcHook;
 import org.axostudio.axohologram.integration.MiniPlaceholdersIntegration;
+import org.axostudio.axohologram.integration.npc.CompositeNpcHook;
+import org.axostudio.axohologram.integration.npc.NpcHook;
 import org.axostudio.axohologram.integration.npc.NpcLinkService;
 import org.axostudio.axohologram.listener.HologramInteractionListener;
 import org.axostudio.axohologram.integration.PlaceholderAPIIntegration;
@@ -23,7 +26,9 @@ import org.bukkit.Bukkit;
 import org.bukkit.plugin.ServicePriority;
 import org.bukkit.plugin.java.JavaPlugin;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 public final class AxoHologram extends JavaPlugin {
 
@@ -39,6 +44,8 @@ public final class AxoHologram extends JavaPlugin {
     private AnimationManager animationManager;
     private ImportManager importManager;
     private AxoHologramAPI api;
+
+    private static final long[] POST_STARTUP_PLACEHOLDER_REFRESH_DELAYS = {1L, 20L, 100L};
 
     @Override
     public void onEnable() {
@@ -56,7 +63,9 @@ public final class AxoHologram extends JavaPlugin {
         getServer().getServicesManager().register(AxoHologramAPI.class, api, this, ServicePriority.Normal);
         this.hologramManager = new HologramManager(this);
         this.importManager = new ImportManager(this);
+        setupPlaceholderIntegrations();
         hologramManager.loadHolograms();
+        setupNpcIntegration();
         animationManager.start();
         this.updateChecker = new UpdateChecker(this);
 
@@ -77,7 +86,7 @@ public final class AxoHologram extends JavaPlugin {
         getServer().getPluginManager().registerEvents(new PlayerListener(this), this);
         getServer().getPluginManager().registerEvents(new HologramInteractionListener(this), this);
 
-        setupIntegrations();
+        schedulePlaceholderRuntimeRefreshes(POST_STARTUP_PLACEHOLDER_REFRESH_DELAYS);
         checkForUpdates();
         getLogger().info("AxoHologram has been enabled!");
     }
@@ -99,10 +108,9 @@ public final class AxoHologram extends JavaPlugin {
         getLogger().info("AxoHologram has been disabled!");
     }
 
-    private void setupIntegrations() {
+    private void setupPlaceholderIntegrations() {
         setupPlaceholderApiIntegration();
         setupMiniPlaceholdersIntegration();
-        setupFancyNpcIntegration();
     }
 
     private void setupPlaceholderApiIntegration() {
@@ -147,29 +155,67 @@ public final class AxoHologram extends JavaPlugin {
         getLogger().warning("MiniPlaceholders is enabled but its API could not be initialized.");
     }
 
-    private void setupFancyNpcIntegration() {
+    private void setupNpcIntegration() {
         stopNpcIntegration();
 
-        if (!configManager.getConfig().getBoolean("integrations.fancynpcs", true)) {
-            getLogger().info("FancyNpcs integration disabled in config.");
+        List<NpcHook> hooks = new ArrayList<>();
+        addAxoNpcHook(hooks);
+        addFancyNpcHook(hooks);
+
+        if (hooks.isEmpty()) {
+            getLogger().info("No supported NPC plugin found. NPC-linked holograms will stay static.");
             return;
         }
 
-        boolean fancyNpcsEnabled = Bukkit.getPluginManager().isPluginEnabled("FancyNpcs");
-        if (!fancyNpcsEnabled) {
-            getLogger().info("FancyNpcs not found. NPC-linked holograms will stay static.");
-            return;
-        }
-
-        FancyNpcHook hook = new FancyNpcHook();
+        NpcHook hook = hooks.size() == 1 ? hooks.getFirst() : new CompositeNpcHook(hooks);
         if (!hook.isAvailable()) {
-            getLogger().warning("FancyNpcs is enabled but its API is not available. Skipping NPC integration.");
+            getLogger().warning("Supported NPC plugin found, but its API is not available. Skipping NPC integration.");
             return;
         }
 
         npcLinkService = new NpcLinkService(this, hook);
         npcLinkService.start();
-        getLogger().info("FancyNpcs found! Enabling NPC link integration.");
+        getLogger().info("NPC link integration enabled through " + hook.getPluginName() + ".");
+    }
+
+    private void addAxoNpcHook(List<NpcHook> hooks) {
+        if (!configManager.getConfig().getBoolean("integrations.axonpcs", true)) {
+            getLogger().info("AxoNPCs integration disabled in config.");
+            return;
+        }
+
+        if (!Bukkit.getPluginManager().isPluginEnabled("AxoNPCs")) {
+            getLogger().info("AxoNPCs not found.");
+            return;
+        }
+
+        AxoNpcHook hook = new AxoNpcHook();
+        if (!hook.isAvailable()) {
+            getLogger().warning("AxoNPCs is enabled but its API is not available.");
+            return;
+        }
+
+        hooks.add(hook);
+    }
+
+    private void addFancyNpcHook(List<NpcHook> hooks) {
+        if (!configManager.getConfig().getBoolean("integrations.fancynpcs", true)) {
+            getLogger().info("FancyNpcs integration disabled in config.");
+            return;
+        }
+
+        if (!Bukkit.getPluginManager().isPluginEnabled("FancyNpcs")) {
+            getLogger().info("FancyNpcs not found.");
+            return;
+        }
+
+        FancyNpcHook hook = new FancyNpcHook();
+        if (!hook.isAvailable()) {
+            getLogger().warning("FancyNpcs is enabled but its API is not available.");
+            return;
+        }
+
+        hooks.add(hook);
     }
 
     private void stopNpcIntegration() {
@@ -196,9 +242,62 @@ public final class AxoHologram extends JavaPlugin {
         configManager.loadAllConfigs();
         MiniMessageUtil.clearPlaceholderApiCache();
         animationManager.reloadAnimations();
+        setupPlaceholderIntegrations();
         hologramManager.reload();
-        setupIntegrations();
+        setupNpcIntegration();
+        schedulePlaceholderRuntimeRefreshes(1L, 20L);
         checkForUpdates();
+    }
+
+    public void handleOptionalPluginEnabled(String pluginName) {
+        if (pluginName == null || pluginName.isBlank()) {
+            return;
+        }
+
+        boolean placeholderIntegrationChanged = false;
+        switch (pluginName.trim().toLowerCase(Locale.ROOT)) {
+            case "placeholderapi" -> {
+                setupPlaceholderApiIntegration();
+                placeholderIntegrationChanged = true;
+            }
+            case "miniplaceholders" -> {
+                setupMiniPlaceholdersIntegration();
+                placeholderIntegrationChanged = true;
+            }
+            case "axonpcs", "fancynpcs" -> {
+                setupNpcIntegration();
+                if (hologramManager != null) {
+                    hologramManager.refreshRuntimeStateAndOnlineViewers();
+                }
+            }
+            default -> {
+                return;
+            }
+        }
+
+        if (placeholderIntegrationChanged) {
+            schedulePlaceholderRuntimeRefreshes(1L, 20L, 100L);
+        }
+    }
+
+    private void schedulePlaceholderRuntimeRefreshes(long... delays) {
+        if (schedulerUtil == null || hologramManager == null || delays == null) {
+            return;
+        }
+
+        for (long delay : delays) {
+            long normalizedDelay = Math.max(1L, delay);
+            schedulerUtil.runGlobalDelayed(task -> refreshPlaceholderRuntimeState(), normalizedDelay);
+        }
+    }
+
+    private void refreshPlaceholderRuntimeState() {
+        if (!isEnabled() || hologramManager == null) {
+            return;
+        }
+
+        MiniMessageUtil.clearPlaceholderApiCache();
+        hologramManager.refreshRuntimeStateAndOnlineViewers();
     }
 
     public static AxoHologram getInstance() {

@@ -22,7 +22,7 @@ AxoHologram esta orientado a hologramas de texto, item y bloque, con edicion por
 - Estilo configurable: `billboard`, `scale`, `shadow`, `background`, `brightness`, `alignment`
 - Posicionamiento por coordenadas, rotacion, offset base y offset por linea
 - Animaciones de texto y display desde un unico `animations.yml`
-- Integracion opcional con FancyNPCs
+- Integracion opcional con AxoNPCs y FancyNPCs
 - API publica para otros plugins
 - Archivos separados por holograma en `plugins/AxoHologram/holograms/<id>.yml`
 
@@ -87,7 +87,7 @@ Comandos equivalentes:
 | `/holograma rotatepitch <id> <degrees>` | Cambia la rotacion vertical |
 | `/holograma offset <id> <x> <y> <z>` | Cambia el offset base del holograma |
 
-Si un holograma esta vinculado a FancyNPCs, no puede moverse manualmente hasta hacer `unlink`.
+Si un holograma esta vinculado a un NPC, no puede moverse manualmente hasta hacer `unlink`.
 
 ### Paginas
 
@@ -155,7 +155,7 @@ axohologram.view.<id>
 | `/holograma brightness <id> <block\|sky> <0-15>` | Cambia el brillo |
 | `/holograma align <id> <center\|left\|right>` | Cambia la alineacion del texto |
 
-### FancyNPCs
+### NPCs
 
 | Comando | Descripcion |
 |---|---|
@@ -180,8 +180,8 @@ axohologram.view.<id>
 | `axohologram.page.edit` | Editar paginas |
 | `axohologram.line.edit` | Editar lineas |
 | `axohologram.permission.edit` | Editar permisos de holograma |
-| `axohologram.npc.edit` | Vincular y desvincular FancyNPCs |
-| `axohologram.npc.info` | Ver informacion del vinculo con FancyNPCs |
+| `axohologram.npc.edit` | Vincular y desvincular NPCs |
+| `axohologram.npc.info` | Ver informacion del vinculo con NPCs |
 | `axohologram.view.<id>` | Ver un holograma concreto si usa visibilidad por permiso |
 
 ## Formato de texto
@@ -267,7 +267,7 @@ El plugin tambien crea `plugins/AxoHologram/holograms/animation_example.yml` si 
 
 Si esta instalado y habilitado en config, se parsean placeholders por jugador en texto.
 
-### FancyNPCs
+### AxoNPCs y FancyNPCs
 
 Si esta instalado y habilitado en config:
 
@@ -368,7 +368,7 @@ plugins/AxoHologram/holograms/rules.yml
 
 - El plugin esta orientado a **Paper**, no a Bukkit/Spigot como target principal.
 - Los hologramas simples de texto pueden renderizarse como un solo `TextDisplay`.
-- Los hologramas vinculados a FancyNPCs priorizan la posicion del NPC sobre movimiento manual.
+- Los hologramas vinculados a NPCs priorizan la posicion del NPC sobre movimiento manual.
 - Los hologramas temporales creados por API no se guardan en YAML.
 
 ## Tipos de animaciones

@@ -43,7 +43,10 @@ performance:
 integrations:
   placeholderapi: true
   miniplaceholders: true
+  axonpcs: true
   fancynpcs: true
+  npc-sync-interval: 10
+  npc-y-offset: 2.2
   fancynpcs-sync-interval: 10
   fancynpcs-y-offset: 2.2
 

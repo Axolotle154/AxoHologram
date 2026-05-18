@@ -260,7 +260,12 @@ public class HologramManager {
         plugin.getSchedulerUtil().runGlobalDelayed(task -> refreshOnlineViewers(), 1L);
     }
 
-    private void refreshOnlineViewers() {
+    public void refreshRuntimeStateAndOnlineViewers() {
+        restartRefreshTask();
+        refreshOnlineViewers();
+    }
+
+    public void refreshOnlineViewers() {
         for (Player player : Bukkit.getOnlinePlayers()) {
             updateVisibilityForPlayer(player, true);
         }

@@ -16,6 +16,10 @@ dependencies:
       load: BEFORE
       required: false
       join-classpath: true
+    AxoNPCs:
+      load: BEFORE
+      required: false
+      join-classpath: true
     FancyNpcs:
       load: BEFORE
       required: false
@@ -87,10 +91,10 @@ permissions:
     description: Allows editing hologram permission requirements.
     default: op
   axohologram.npc.edit:
-    description: Allows linking holograms to FancyNPCs.
+    description: Allows linking holograms to supported NPC plugins.
     default: op
   axohologram.npc.info:
-    description: Allows viewing FancyNPC link information.
+    description: Allows viewing NPC link information.
     default: op
   axohologram.command.edit:
     description: Allows editing hologram position, pages, style and general settings.

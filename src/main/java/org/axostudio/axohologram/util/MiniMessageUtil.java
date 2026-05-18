@@ -217,7 +217,7 @@ public final class MiniMessageUtil {
                 String result = PlaceholderAPI.setPlaceholders(player, text);
                 String resolvedText = result != null ? result : text;
                 long cacheSeconds = resolvePlaceholderCacheSeconds(text);
-                if (cacheSeconds > 0L) {
+                if (cacheSeconds > 0L && shouldCachePlaceholderApiResult(text, resolvedText)) {
                     PLACEHOLDER_API_CACHE.put(cacheKey, new PlaceholderCacheEntry(resolvedText, now + cacheSeconds * 1000L));
                 }
                 return resolvedText;
@@ -240,6 +240,18 @@ public final class MiniMessageUtil {
             components.add(parse(line, player, hologramId));
         }
         return components;
+    }
+
+    private static boolean shouldCachePlaceholderApiResult(String originalText, String resolvedText) {
+        if (resolvedText == null) {
+            return false;
+        }
+        if (originalText != null && originalText.equals(resolvedText) && containsPlaceholderApiSyntax(originalText)) {
+            return false;
+        }
+
+        String normalized = resolvedText.trim().toLowerCase(Locale.ROOT);
+        return !normalized.equals("loading") && !normalized.contains("loading...");
     }
 
     private static List<String> applyPlaceholderApiBatch(List<String> lines, Player player, String hologramId) {

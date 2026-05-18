@@ -2,7 +2,8 @@ package org.axostudio.axohologram.integration.npc;
 
 import org.axostudio.axohologram.AxoHologram;
 import org.axostudio.axohologram.hologram.Hologram;
-import org.axostudio.axohologram.integration.fancynpcs.FancyNpcHook;
+import org.axostudio.axohologram.integration.npc.NpcHook.NpcLocationUpdate;
+import org.axostudio.axohologram.util.SchedulerUtil;
 import org.bukkit.Location;
 import org.bukkit.World;
 
@@ -22,6 +23,7 @@ public final class NpcLinkService {
     private final AxoHologram plugin;
     private final NpcHook npcHook;
     private final Map<String, Location> lastNpcLocations = new ConcurrentHashMap<>();
+    private SchedulerUtil.TaskHandle syncTask;
 
     public NpcLinkService(AxoHologram plugin, NpcHook npcHook) {
         this.plugin = plugin;
@@ -34,26 +36,35 @@ public final class NpcLinkService {
             return;
         }
 
-        if (npcHook instanceof FancyNpcHook fancyNpcHook) {
-            fancyNpcHook.startWatching(
-                    plugin,
-                    this::syncLinkedNpcLocation,
-                    this::syncLinkedHolograms,
-                    this::forgetNpcLocations
-            );
-        }
+        npcHook.startWatching(
+                plugin,
+                this::syncLinkedNpcLocation,
+                this::syncLinkedHolograms,
+                this::forgetNpcLocations
+        );
+        startPeriodicSync();
         syncLinkedHolograms();
     }
 
     public void stop() {
-        if (npcHook instanceof FancyNpcHook fancyNpcHook) {
-            fancyNpcHook.stopWatching();
+        npcHook.stopWatching();
+        if (syncTask != null) {
+            syncTask.cancel();
+            syncTask = null;
         }
         lastNpcLocations.clear();
     }
 
     public boolean isAvailable() {
         return npcHook.isAvailable();
+    }
+
+    public String getPluginName() {
+        return npcHook.getPluginName();
+    }
+
+    public String getProviderName(String npcName) {
+        return npcHook.getProviderName(npcName).orElseGet(npcHook::getPluginName);
     }
 
     public boolean hasNpc(String npcName) {
@@ -119,7 +130,7 @@ public final class NpcLinkService {
         rememberNpcLocation(List.of(linkedNpc), npcLocation.get());
     }
 
-    private void syncLinkedNpcLocation(FancyNpcHook.NpcLocationUpdate update) {
+    private void syncLinkedNpcLocation(NpcLocationUpdate update) {
         if (update == null || update.location() == null || update.identifiers().isEmpty()) {
             return;
         }
@@ -170,7 +181,26 @@ public final class NpcLinkService {
     }
 
     private double resolveYOffset() {
-        return plugin.getConfigManager().getConfig().getDouble("integrations.fancynpcs-y-offset", 2.2D);
+        return plugin.getConfigManager().getConfig().getDouble(
+                "integrations.npc-y-offset",
+                plugin.getConfigManager().getConfig().getDouble("integrations.fancynpcs-y-offset", 2.2D)
+        );
+    }
+
+    private void startPeriodicSync() {
+        long syncInterval = resolveSyncInterval();
+        if (syncInterval <= 0L) {
+            return;
+        }
+
+        syncTask = plugin.getSchedulerUtil().runGlobalAtFixedRate(this::syncLinkedHolograms, syncInterval, syncInterval);
+    }
+
+    private long resolveSyncInterval() {
+        return plugin.getConfigManager().getConfig().getLong(
+                "integrations.npc-sync-interval",
+                plugin.getConfigManager().getConfig().getLong("integrations.fancynpcs-sync-interval", 10L)
+        );
     }
 
     private Optional<Location> resolveNpcLocation(String npcName) {
