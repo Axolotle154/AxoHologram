@@ -16,14 +16,19 @@ public class ConfigManager {
     private final AxoHologram plugin;
     private FileConfiguration config;
     private FileConfiguration messages;
+    private FileConfiguration media;
+    private volatile VisibilityRuntimeConfig visibilityRuntimeConfig = VisibilityRuntimeConfig.from(null);
+    private volatile DynamicRefreshRuntimeConfig dynamicRefreshRuntimeConfig = DynamicRefreshRuntimeConfig.from(null);
 
     private final File configFile;
     private final File messagesFile;
+    private final File mediaFile;
 
     public ConfigManager(AxoHologram plugin) {
         this.plugin = plugin;
         this.configFile = new File(plugin.getDataFolder(), "config.yml");
         this.messagesFile = new File(plugin.getDataFolder(), "messages.yml");
+        this.mediaFile = new File(plugin.getDataFolder(), "media.yml");
     }
 
     public void loadAllConfigs() {
@@ -33,9 +38,11 @@ public class ConfigManager {
 
         saveDefaultIfMissing("config.yml", configFile);
         saveDefaultIfMissing("messages.yml", messagesFile);
+        saveDefaultIfMissing("media.yml", mediaFile);
 
         reloadConfig();
         reloadMessages();
+        reloadMedia();
     }
 
     private void saveDefaultIfMissing(String resourcePath, File destination) {
@@ -71,12 +78,25 @@ public class ConfigManager {
         return messages;
     }
 
+    public FileConfiguration getMedia() {
+        if (media == null) {
+            reloadMedia();
+        }
+        return media;
+    }
+
     public void reloadConfig() {
         config = loadConfiguration(configFile, "config.yml");
+        visibilityRuntimeConfig = VisibilityRuntimeConfig.from(config);
+        dynamicRefreshRuntimeConfig = DynamicRefreshRuntimeConfig.from(config);
     }
 
     public void reloadMessages() {
         messages = loadConfiguration(messagesFile, "messages.yml");
+    }
+
+    public void reloadMedia() {
+        media = loadConfiguration(mediaFile, "media.yml");
     }
 
     public void saveConfig() {
@@ -85,6 +105,18 @@ public class ConfigManager {
 
     public void saveMessages() {
         saveYaml(messages, messagesFile, "messages");
+    }
+
+    public void saveMedia() {
+        saveYaml(media, mediaFile, "media");
+    }
+
+    public VisibilityRuntimeConfig getVisibilityRuntimeConfig() {
+        return visibilityRuntimeConfig;
+    }
+
+    public DynamicRefreshRuntimeConfig getDynamicRefreshRuntimeConfig() {
+        return dynamicRefreshRuntimeConfig;
     }
 
     private void saveYaml(FileConfiguration configuration, File file, String name) {

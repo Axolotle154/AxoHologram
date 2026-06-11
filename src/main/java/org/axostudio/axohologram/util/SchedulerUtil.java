@@ -24,7 +24,7 @@ public final class SchedulerUtil {
 
     public SchedulerUtil(Plugin plugin) {
         this.plugin = plugin;
-        this.isFolia = isFolia();
+        this.isFolia = detectFolia();
     }
 
     public void run(Runnable runnable) {
@@ -165,15 +165,21 @@ public final class SchedulerUtil {
     }
 
     public boolean runAtEntity(Entity entity, Runnable runnable) {
-        if (entity == null || !entity.isValid()) {
+        if (entity == null) {
             return false;
         }
 
         if (!plugin.isEnabled()) {
             if (!isFolia) {
+                if (!entity.isValid()) {
+                    return false;
+                }
                 return runImmediatelyIfSafe(runnable);
             }
             if (Bukkit.isOwnedByCurrentRegion(entity)) {
+                if (!entity.isValid()) {
+                    return false;
+                }
                 runnable.run();
                 return true;
             }
@@ -182,11 +188,17 @@ public final class SchedulerUtil {
 
         if (isFolia) {
             if (Bukkit.isOwnedByCurrentRegion(entity)) {
+                if (!entity.isValid()) {
+                    return false;
+                }
                 runnable.run();
                 return true;
             }
             return entity.getScheduler().run(plugin, task -> runnable.run(), null) != null;
         } else {
+            if (!entity.isValid()) {
+                return false;
+            }
             if (Bukkit.isPrimaryThread()) {
                 runnable.run();
                 return true;
@@ -197,7 +209,7 @@ public final class SchedulerUtil {
     }
 
     public boolean runAtEntityDelayed(Entity entity, Runnable runnable, long delayTicks) {
-        if (entity == null || !entity.isValid()) {
+        if (entity == null) {
             return false;
         }
 
@@ -211,12 +223,23 @@ public final class SchedulerUtil {
         if (isFolia) {
             return entity.getScheduler().runDelayed(plugin, task -> runnable.run(), null, delayTicks) != null;
         } else {
+            if (!entity.isValid()) {
+                return false;
+            }
             runLater(runnable, delayTicks);
             return true;
         }
     }
 
+    public boolean isFoliaServer() {
+        return isFolia;
+    }
+
     public boolean isFolia() {
+        return isFolia;
+    }
+
+    private boolean detectFolia() {
         try {
             Class.forName("io.papermc.paper.threadedregions.RegionizedServer");
             return true;

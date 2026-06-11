@@ -6,8 +6,10 @@ import org.axostudio.axohologram.animation.AnimationConfigManager;
 import org.axostudio.axohologram.animation.AnimationManager;
 import org.axostudio.axohologram.api.AxoHologramAPI;
 import org.axostudio.axohologram.api.AxoHologramProvider;
+import org.axostudio.axohologram.backup.BackupManager;
 import org.axostudio.axohologram.command.HologramCommand;
 import org.axostudio.axohologram.config.ConfigManager;
+import org.axostudio.axohologram.gui.HologramListMenu;
 import org.axostudio.axohologram.hologram.HologramManager;
 import org.axostudio.axohologram.importer.ImportManager;
 import org.axostudio.axohologram.integration.axonpcs.AxoNpcHook;
@@ -19,6 +21,8 @@ import org.axostudio.axohologram.integration.npc.NpcLinkService;
 import org.axostudio.axohologram.listener.HologramInteractionListener;
 import org.axostudio.axohologram.integration.PlaceholderAPIIntegration;
 import org.axostudio.axohologram.listener.PlayerListener;
+import org.axostudio.axohologram.media.MediaCacheManager;
+import org.axostudio.axohologram.media.MediaManager;
 import org.axostudio.axohologram.util.MiniMessageUtil;
 import org.axostudio.axohologram.util.SchedulerUtil;
 import org.axostudio.axohologram.util.UpdateChecker;
@@ -43,6 +47,10 @@ public final class AxoHologram extends JavaPlugin {
     private AnimationConfigManager animationConfigManager;
     private AnimationManager animationManager;
     private ImportManager importManager;
+    private MediaCacheManager mediaCacheManager;
+    private MediaManager mediaManager;
+    private BackupManager backupManager;
+    private HologramListMenu hologramListMenu;
     private AxoHologramAPI api;
 
     private static final long[] POST_STARTUP_PLACEHOLDER_REFRESH_DELAYS = {1L, 20L, 100L};
@@ -62,9 +70,15 @@ public final class AxoHologram extends JavaPlugin {
         this.api = new AxoHologramProvider(this);
         getServer().getServicesManager().register(AxoHologramAPI.class, api, this, ServicePriority.Normal);
         this.hologramManager = new HologramManager(this);
+        this.mediaCacheManager = new MediaCacheManager(this);
+        mediaCacheManager.ensureFolders();
+        this.mediaManager = new MediaManager(this, mediaCacheManager);
+        this.backupManager = new BackupManager(this, mediaCacheManager);
+        this.hologramListMenu = new HologramListMenu(this);
         this.importManager = new ImportManager(this);
         setupPlaceholderIntegrations();
         hologramManager.loadHolograms();
+        mediaManager.loadMedia();
         setupNpcIntegration();
         animationManager.start();
         this.updateChecker = new UpdateChecker(this);
@@ -85,6 +99,7 @@ public final class AxoHologram extends JavaPlugin {
 
         getServer().getPluginManager().registerEvents(new PlayerListener(this), this);
         getServer().getPluginManager().registerEvents(new HologramInteractionListener(this), this);
+        getServer().getPluginManager().registerEvents(hologramListMenu, this);
 
         schedulePlaceholderRuntimeRefreshes(POST_STARTUP_PLACEHOLDER_REFRESH_DELAYS);
         checkForUpdates();
@@ -100,6 +115,9 @@ public final class AxoHologram extends JavaPlugin {
             animationManager.stop();
         }
         shutdownIntegrations();
+        if (mediaManager != null) {
+            mediaManager.shutdown();
+        }
         if (hologramManager != null) {
             hologramManager.shutdown();
         }
@@ -111,6 +129,7 @@ public final class AxoHologram extends JavaPlugin {
     private void setupPlaceholderIntegrations() {
         setupPlaceholderApiIntegration();
         setupMiniPlaceholdersIntegration();
+        MiniMessageUtil.refreshRuntimeState();
     }
 
     private void setupPlaceholderApiIntegration() {
@@ -244,6 +263,9 @@ public final class AxoHologram extends JavaPlugin {
         animationManager.reloadAnimations();
         setupPlaceholderIntegrations();
         hologramManager.reload();
+        if (mediaManager != null) {
+            mediaManager.reload();
+        }
         setupNpcIntegration();
         schedulePlaceholderRuntimeRefreshes(1L, 20L);
         checkForUpdates();
@@ -276,8 +298,27 @@ public final class AxoHologram extends JavaPlugin {
         }
 
         if (placeholderIntegrationChanged) {
+            MiniMessageUtil.refreshRuntimeState();
             schedulePlaceholderRuntimeRefreshes(1L, 20L, 100L);
         }
+    }
+
+    public void handleOptionalPluginDisabled(String pluginName) {
+        if (pluginName == null || pluginName.isBlank()) {
+            return;
+        }
+
+        switch (pluginName.trim().toLowerCase(Locale.ROOT)) {
+            case "placeholderapi" -> stopPlaceholderApiIntegration();
+            case "miniplaceholders" -> {
+            }
+            default -> {
+                return;
+            }
+        }
+
+        MiniMessageUtil.refreshRuntimeState();
+        schedulePlaceholderRuntimeRefreshes(1L, 20L);
     }
 
     private void schedulePlaceholderRuntimeRefreshes(long... delays) {
@@ -296,6 +337,7 @@ public final class AxoHologram extends JavaPlugin {
             return;
         }
 
+        MiniMessageUtil.refreshRuntimeState();
         MiniMessageUtil.clearPlaceholderApiCache();
         hologramManager.refreshRuntimeStateAndOnlineViewers();
     }
@@ -338,6 +380,22 @@ public final class AxoHologram extends JavaPlugin {
 
     public ImportManager getImportManager() {
         return importManager;
+    }
+
+    public MediaManager getMediaManager() {
+        return mediaManager;
+    }
+
+    public MediaCacheManager getMediaCacheManager() {
+        return mediaCacheManager;
+    }
+
+    public HologramListMenu getHologramListMenu() {
+        return hologramListMenu;
+    }
+
+    public BackupManager getBackupManager() {
+        return backupManager;
     }
 
     public UpdateChecker getUpdateChecker() {

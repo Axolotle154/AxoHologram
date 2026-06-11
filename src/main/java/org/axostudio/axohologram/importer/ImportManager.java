@@ -30,6 +30,7 @@ public final class ImportManager {
         this.converter = new HologramConverter(new LineConverter());
         registerImporter(new FancyHologramsImporter(plugin, this, new FancyHologramsParser(plugin), converter));
         registerImporter(new DecentHologramsImporter(plugin, this, new DecentHologramsParser(plugin), converter));
+        registerImporter(new GholoImporter(plugin, this, new GholoParser(plugin), converter));
     }
 
     public Collection<HologramImporter> importers() {

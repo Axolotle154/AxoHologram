@@ -217,10 +217,72 @@ final class ImportParserUtil {
     static long readLong(ConfigurationSection section, long fallback, String... keys) {
         for (String key : keys) {
             if (section.contains(key)) {
-                return section.getLong(key, fallback);
+                return readLong(section.get(key), fallback);
             }
         }
         return fallback;
+    }
+
+    private static long readLong(Object value, long fallback) {
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        if (!(value instanceof String text)) {
+            return fallback;
+        }
+
+        String normalized = text.trim().toLowerCase(Locale.ROOT);
+        if (normalized.isEmpty() || normalized.equals("default")) {
+            return fallback;
+        }
+        try {
+            if (normalized.endsWith("milliseconds")) {
+                return millisecondsToTicks(normalized.substring(0, normalized.length() - "milliseconds".length()));
+            }
+            if (normalized.endsWith("millisecond")) {
+                return millisecondsToTicks(normalized.substring(0, normalized.length() - "millisecond".length()));
+            }
+            if (normalized.endsWith("ms")) {
+                return millisecondsToTicks(normalized.substring(0, normalized.length() - 2));
+            }
+            if (normalized.endsWith("seconds")) {
+                return secondsToTicks(normalized.substring(0, normalized.length() - "seconds".length()));
+            }
+            if (normalized.endsWith("second")) {
+                return secondsToTicks(normalized.substring(0, normalized.length() - "second".length()));
+            }
+            if (normalized.endsWith("secs")) {
+                return secondsToTicks(normalized.substring(0, normalized.length() - 4));
+            }
+            if (normalized.endsWith("sec")) {
+                return secondsToTicks(normalized.substring(0, normalized.length() - 3));
+            }
+            if (normalized.endsWith("s")) {
+                return secondsToTicks(normalized.substring(0, normalized.length() - 1));
+            }
+            if (normalized.endsWith("ticks")) {
+                return Long.parseLong(normalized.substring(0, normalized.length() - 5).trim());
+            }
+            if (normalized.endsWith("tick")) {
+                return Long.parseLong(normalized.substring(0, normalized.length() - 4).trim());
+            }
+            if (normalized.endsWith("t")) {
+                return Long.parseLong(normalized.substring(0, normalized.length() - 1).trim());
+            }
+            return Long.parseLong(normalized);
+        } catch (NumberFormatException ignored) {
+            return fallback;
+        }
+    }
+
+    private static long secondsToTicks(String rawSeconds) {
+        double seconds = Double.parseDouble(rawSeconds.trim());
+        return Double.isFinite(seconds) ? Math.round(seconds * 20.0D) : -1L;
+    }
+
+    private static long millisecondsToTicks(String rawMilliseconds) {
+        double milliseconds = Double.parseDouble(rawMilliseconds.trim());
+        return Double.isFinite(milliseconds) ? Math.round(milliseconds / 50.0D) : -1L;
     }
 
     static float readFloat(ConfigurationSection section, float fallback, String... keys) {

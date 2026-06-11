@@ -1101,6 +1101,10 @@ public final class HologramPacketManager {
     }
 
     private static boolean hasInteractiveActions(Hologram hologram) {
+        if (hologram.getPages().size() > 1) {
+            return true;
+        }
+
         for (HologramClickType clickType : HologramClickType.values()) {
             if (!hologram.getActions(clickType).isEmpty()) {
                 return true;

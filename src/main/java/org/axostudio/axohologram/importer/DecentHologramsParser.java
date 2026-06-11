@@ -130,7 +130,17 @@ public final class DecentHologramsParser {
                 ImportParserUtil.readBoolean(config, false, "text_shadow", "style.text-shadow"),
                 ImportParserUtil.readBoolean(config, false, "see_through", "style.see-through"),
                 ImportParserUtil.readAlignment(config),
-                ImportParserUtil.readLong(config, -1L, "update-interval", "update_interval", "text.update-interval", "update-text-interval"),
+                ImportParserUtil.readLong(config, -1L,
+                        "update-interval",
+                        "update_interval",
+                        "updateTextInterval",
+                        "updateInterval",
+                        "text.update-interval",
+                        "text.update_interval",
+                        "text.updateTextInterval",
+                        "text.updateInterval",
+                        "text_update_interval",
+                        "update-text-interval"),
                 displayAnimation,
                 pages
         );

@@ -24,6 +24,7 @@ import java.util.regex.Pattern;
 public final class UpdateChecker {
 
     private static final String PROJECT_ID = "v7Mdthjb";
+    private static final String DOWNLOAD_URL = "https://modrinth.com/plugin/axohologram";
     private static final int CONNECT_TIMEOUT_MS = 5000;
     private static final int READ_TIMEOUT_MS = 5000;
     private static final Pattern VERSION_TOKEN_PATTERN = Pattern.compile("[A-Za-z]+|\\d+");
@@ -79,8 +80,7 @@ public final class UpdateChecker {
 
                 JsonObject latest = versions.get(0).getAsJsonObject();
                 latestVersion = latest.get("version_number").getAsString();
-                String versionId = latest.get("id").getAsString();
-                latestVersionUrl = "https://modrinth.com/project/" + PROJECT_ID + "/version/" + versionId;
+                latestVersionUrl = DOWNLOAD_URL;
 
                 int comparison = compareVersions(latestVersion, currentVersion);
                 if (comparison <= 0) {

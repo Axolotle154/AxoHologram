@@ -1,6 +1,7 @@
 name: AxoHologram
 version: '${project.version}'
 main: org.axostudio.axohologram.AxoHologram
+loader: org.axostudio.axohologram.AxoHologramPluginLoader
 api-version: '26.1'
 authors: [AxoStudio]
 description: Display-entity hologram system for Paper.
@@ -31,11 +32,18 @@ permissions:
     default: op
     children:
       axohologram.create: true
+      axohologram.create.image: true
+      axohologram.create.video: true
       axohologram.delete: true
+      axohologram.remove: true
       axohologram.edit: true
       axohologram.reload: true
       axohologram.list: true
+      axohologram.info: true
       axohologram.import: true
+      axohologram.video.play: true
+      axohologram.video.pause: true
+      axohologram.video.stop: true
       axohologram.teleport: true
       axohologram.hologram.move: true
       axohologram.hologram.visibility: true
@@ -50,12 +58,20 @@ permissions:
       axohologram.command.visibility: true
       axohologram.command.npc: true
       axohologram.command.action: true
-      axohologram.update.notify: true
   axohologram.create:
     description: Allows creating new holograms.
     default: op
+  axohologram.create.image:
+    description: Allows creating image media holograms.
+    default: op
+  axohologram.create.video:
+    description: Allows creating video media holograms.
+    default: op
   axohologram.delete:
     description: Allows deleting holograms.
+    default: op
+  axohologram.remove:
+    description: Allows removing holograms.
     default: op
   axohologram.edit:
     description: Allows editing existing holograms.
@@ -66,8 +82,20 @@ permissions:
   axohologram.list:
     description: Allows listing holograms.
     default: op
+  axohologram.info:
+    description: Allows viewing hologram information.
+    default: op
   axohologram.import:
     description: Allows importing holograms from supported plugins.
+    default: op
+  axohologram.video.play:
+    description: Allows playing video holograms.
+    default: op
+  axohologram.video.pause:
+    description: Allows pausing video holograms.
+    default: op
+  axohologram.video.stop:
+    description: Allows stopping video holograms.
     default: op
   axohologram.teleport:
     description: Allows teleporting to holograms.
@@ -113,4 +141,4 @@ permissions:
     default: op
   axohologram.update.notify:
     description: Allows receiving update notifications when joining the server.
-    default: op
+    default: false

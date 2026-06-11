@@ -3,6 +3,7 @@ package org.axostudio.axohologram.hologram.impl;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.JoinConfiguration;
 import org.axostudio.axohologram.AxoHologram;
+import org.axostudio.axohologram.config.DynamicRefreshRuntimeConfig;
 import org.axostudio.axohologram.hologram.Hologram;
 import org.axostudio.axohologram.hologram.action.HologramAction;
 import org.axostudio.axohologram.hologram.action.HologramActionExecutor;
@@ -29,13 +30,17 @@ import org.bukkit.entity.TextDisplay;
 import org.bukkit.util.Vector;
 
 import java.util.ArrayList;
+import java.util.ArrayDeque;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -53,7 +58,11 @@ public class AxoHologramImpl implements Hologram {
     private final Map<String, Boolean> placeholderApiCache = new ConcurrentHashMap<>();
     private final Map<String, Boolean> animationTagCache = new ConcurrentHashMap<>();
     private final Map<String, Boolean> heavyPlaceholderCache = new ConcurrentHashMap<>();
+    private final Map<String, Boolean> realtimePlaceholderCache = new ConcurrentHashMap<>();
     private final Map<String, Component> simpleTextComponentCache = new ConcurrentHashMap<>();
+    private final Map<HologramPage, PageDynamicMetadata> pageDynamicMetadataCache = new ConcurrentHashMap<>();
+    private final Deque<UUID> pendingDynamicRefreshViewers = new ArrayDeque<>();
+    private final Set<UUID> queuedDynamicRefreshViewers = ConcurrentHashMap.newKeySet();
 
     private volatile boolean persistent;
     private volatile boolean enabled;
@@ -81,6 +90,8 @@ public class AxoHologramImpl implements Hologram {
     private volatile int defaultPageIndex;
     private volatile String linkedNpc;
     private volatile long lastPeriodicRefreshTick;
+    private volatile long nextPeriodicRefreshTick;
+    private volatile long periodicRefreshIntervalTicks;
     private volatile boolean periodicRefreshStateDirty;
     private volatile boolean periodicRefreshRequired;
     private volatile boolean dynamicPlaceholderRefreshRequired;
@@ -88,6 +99,8 @@ public class AxoHologramImpl implements Hologram {
     private volatile boolean hasDynamicContent;
     private volatile boolean needsRefresh;
     private volatile boolean heavyPeriodicRefresh;
+    private volatile boolean realtimePeriodicRefresh;
+    private volatile boolean dynamicRefreshBatchScheduled;
 
     public AxoHologramImpl(String id, Location location, AxoHologram plugin) {
         this.id = id;
@@ -117,6 +130,8 @@ public class AxoHologramImpl implements Hologram {
         this.displayAnimationEnabled = readDefaultDisplayAnimationEnabled(plugin);
         this.defaultPageIndex = 0;
         this.lastPeriodicRefreshTick = Long.MIN_VALUE;
+        this.nextPeriodicRefreshTick = Long.MIN_VALUE;
+        this.periodicRefreshIntervalTicks = -1L;
         this.periodicRefreshStateDirty = true;
         this.periodicRefreshRequired = false;
         this.dynamicPlaceholderRefreshRequired = false;
@@ -124,6 +139,7 @@ public class AxoHologramImpl implements Hologram {
         this.hasDynamicContent = false;
         this.needsRefresh = false;
         this.heavyPeriodicRefresh = false;
+        this.realtimePeriodicRefresh = false;
         this.pages.add(new AxoHologramPageImpl());
     }
 
@@ -156,6 +172,7 @@ public class AxoHologramImpl implements Hologram {
     public void setEnabled(boolean enabled) {
         this.enabled = enabled;
         plugin.getHologramManager().saveHologram(this);
+        plugin.getHologramManager().refreshVisibilityIndex(this);
         for (Player player : Bukkit.getOnlinePlayers()) {
             updateVisibility(player, true);
         }
@@ -186,6 +203,7 @@ public class AxoHologramImpl implements Hologram {
         if (persist) {
             plugin.getHologramManager().saveHologram(this);
         }
+        plugin.getHologramManager().refreshVisibilityIndex(this);
         for (Player player : Bukkit.getOnlinePlayers()) {
             updateVisibility(player, true);
         }
@@ -335,6 +353,7 @@ public class AxoHologramImpl implements Hologram {
     public void setViewDistance(int viewDistance) {
         this.viewDistance = viewDistance <= 0 ? -1 : viewDistance;
         plugin.getHologramManager().saveHologram(this);
+        plugin.getHologramManager().refreshVisibilityIndex(this);
         for (Player player : Bukkit.getOnlinePlayers()) {
             plugin.getSchedulerUtil().runAtEntity(player, () -> updateVisibility(player, false));
         }
@@ -575,6 +594,7 @@ public class AxoHologramImpl implements Hologram {
 
         actions.computeIfAbsent(clickType, ignored -> new CopyOnWriteArrayList<>()).add(action);
         plugin.getHologramManager().saveHologram(this);
+        refreshViewers();
     }
 
     @Override
@@ -593,6 +613,7 @@ public class AxoHologramImpl implements Hologram {
             actions.remove(clickType);
         }
         plugin.getHologramManager().saveHologram(this);
+        refreshViewers();
         return removed;
     }
 
@@ -685,8 +706,9 @@ public class AxoHologramImpl implements Hologram {
 
         HologramPage page = pages.get(pageIndex);
         data.setCurrentPageIndex(pageIndex);
-        data.setVisibleToPlayer(true);
-        plugin.getHologramManager().onViewerAdded(player, this);
+        if (data.setVisibleToPlayer(true)) {
+            plugin.getHologramManager().onViewerAdded(player, this);
+        }
         if (data.canReuseRenderedPage(pageIndex, page)) {
             if (HologramPacketManager.reshowAllHologramLines(player, id)) {
                 return;
@@ -701,8 +723,9 @@ public class AxoHologramImpl implements Hologram {
         if (player != null) {
             PlayerHologramData data = viewers.remove(player.getUniqueId());
             if (data != null) {
-                data.setVisibleToPlayer(false);
-                plugin.getHologramManager().onViewerRemoved(player, this);
+                if (data.setVisibleToPlayer(false)) {
+                    plugin.getHologramManager().onViewerRemoved(player, this);
+                }
                 HologramPacketManager.destroyAllHologramLines(player.getUniqueId(), id);
             }
         }
@@ -732,14 +755,15 @@ public class AxoHologramImpl implements Hologram {
 
         HologramPage page = pages.get(pageIndex);
         data.setCurrentPageIndex(pageIndex);
-        data.setVisibleToPlayer(true);
-        plugin.getHologramManager().onViewerAdded(player, this);
+        if (data.setVisibleToPlayer(true)) {
+            plugin.getHologramManager().onViewerAdded(player, this);
+        }
         renderPage(player, page, pageIndex, true);
     }
 
     @Override
     public void destroy() {
-        for (UUID uuid : new ArrayList<>(viewers.keySet())) {
+        for (UUID uuid : viewers.keySet()) {
             Player player = Bukkit.getPlayer(uuid);
             if (player != null) {
                 hide(player);
@@ -750,17 +774,19 @@ public class AxoHologramImpl implements Hologram {
 
     @Override
     public void refreshViewers() {
+        invalidatePageRenderCaches();
         if (viewers.isEmpty()) {
             return;
         }
 
-        for (UUID uuid : new ArrayList<>(viewers.keySet())) {
+        for (Map.Entry<UUID, PlayerHologramData> entry : viewers.entrySet()) {
+            UUID uuid = entry.getKey();
             Player player = Bukkit.getPlayer(uuid);
             if (player == null || !player.isOnline()) {
-                viewers.remove(uuid);
+                viewers.remove(uuid, entry.getValue());
                 continue;
             }
-            PlayerHologramData data = viewers.get(uuid);
+            PlayerHologramData data = entry.getValue();
             if (data != null) {
                 data.setDirty();
                 if (!data.isVisibleToPlayer()) {
@@ -793,36 +819,145 @@ public class AxoHologramImpl implements Hologram {
             return;
         }
 
-        for (UUID uuid : new ArrayList<>(viewers.keySet())) {
-            Player player = Bukkit.getPlayer(uuid);
-            if (player == null || !player.isOnline()) {
-                viewers.remove(uuid);
-                continue;
-            }
-            PlayerHologramData data = viewers.get(uuid);
+        boolean queuedWithoutPrecheck = false;
+        for (Map.Entry<UUID, PlayerHologramData> entry : viewers.entrySet()) {
+            UUID uuid = entry.getKey();
+            PlayerHologramData data = entry.getValue();
             if (data == null || !data.isVisibleToPlayer()) {
                 continue;
             }
-            if (!shouldScheduleDynamicRefresh(player, data)) {
-                data.setClean();
+            if (canQueueDynamicRefreshWithoutPrecheck(data)) {
+                enqueueDynamicRefresh(uuid);
+                queuedWithoutPrecheck = true;
                 continue;
             }
-            plugin.getSchedulerUtil().runAtEntity(player, () -> refreshDynamicNow(player));
+
+            Player player = Bukkit.getPlayer(uuid);
+            if (player == null) {
+                viewers.remove(uuid, data);
+                continue;
+            }
+            plugin.getSchedulerUtil().runAtEntity(player, () -> enqueueDynamicRefreshIfNeeded(player));
+        }
+        if (queuedWithoutPrecheck) {
+            scheduleDynamicRefreshBatch(1L);
         }
     }
 
+    private boolean canQueueDynamicRefreshWithoutPrecheck(PlayerHologramData data) {
+        int pageIndex = normalizePageIndex(data.getCurrentPageIndex());
+        HologramPage page = pages.get(pageIndex);
+        return data.isDirty()
+                || data.isPageContentDirty(pageIndex, page)
+                || pageDynamicMetadata(page).hasRealtimePlaceholders();
+    }
+
+    private void enqueueDynamicRefreshIfNeeded(Player player) {
+        UUID playerId = player.getUniqueId();
+        if (!player.isOnline()) {
+            viewers.remove(playerId);
+            return;
+        }
+
+        PlayerHologramData data = viewers.get(playerId);
+        if (data == null || !data.isVisibleToPlayer()) {
+            return;
+        }
+        if (!shouldScheduleDynamicRefresh(player, data)) {
+            data.setClean();
+            return;
+        }
+
+        enqueueDynamicRefresh(playerId);
+        scheduleDynamicRefreshBatch(1L);
+    }
+
+    private void enqueueDynamicRefresh(UUID playerId) {
+        if (playerId == null || !queuedDynamicRefreshViewers.add(playerId)) {
+            return;
+        }
+
+        synchronized (pendingDynamicRefreshViewers) {
+            pendingDynamicRefreshViewers.addLast(playerId);
+        }
+    }
+
+    private void scheduleDynamicRefreshBatch(long delayTicks) {
+        synchronized (pendingDynamicRefreshViewers) {
+            if (dynamicRefreshBatchScheduled || pendingDynamicRefreshViewers.isEmpty()) {
+                return;
+            }
+            dynamicRefreshBatchScheduled = true;
+        }
+
+        plugin.getSchedulerUtil().runGlobalDelayed(task -> processDynamicRefreshBatch(), Math.max(1L, delayTicks));
+    }
+
+    private void processDynamicRefreshBatch() {
+        try {
+            int remaining = resolveDynamicRefreshViewerBatchSize();
+            while (remaining-- > 0) {
+                UUID uuid = pollDynamicRefreshViewer();
+                if (uuid == null) {
+                    break;
+                }
+
+                Player player = Bukkit.getPlayer(uuid);
+                if (player == null) {
+                    viewers.remove(uuid);
+                    continue;
+                }
+
+                plugin.getSchedulerUtil().runAtEntity(player, () -> {
+                    PlayerHologramData data = viewers.get(uuid);
+                    if (!player.isOnline() || data == null || !data.isVisibleToPlayer()) {
+                        return;
+                    }
+                    refreshDynamicNow(player);
+                });
+            }
+        } finally {
+            synchronized (pendingDynamicRefreshViewers) {
+                dynamicRefreshBatchScheduled = false;
+            }
+            scheduleDynamicRefreshBatch(1L);
+        }
+    }
+
+    private UUID pollDynamicRefreshViewer() {
+        synchronized (pendingDynamicRefreshViewers) {
+            UUID uuid = pendingDynamicRefreshViewers.pollFirst();
+            if (uuid != null) {
+                queuedDynamicRefreshViewers.remove(uuid);
+            }
+            return uuid;
+        }
+    }
+
+    private int resolveDynamicRefreshViewerBatchSize() {
+        int configured = plugin.getConfigManager().getDynamicRefreshRuntimeConfig().dynamicRefreshViewerBatchSize();
+        if (configured <= 0) {
+            return Integer.MAX_VALUE;
+        }
+        return Math.max(1, configured);
+    }
+
     private boolean shouldScheduleDynamicRefresh(Player player, PlayerHologramData data) {
+        int pageIndex = normalizePageIndex(data.getCurrentPageIndex());
+        HologramPage page = pages.get(pageIndex);
+        PageDynamicMetadata metadata = pageDynamicMetadata(page);
+        if (metadata.hasPlaceholderApiContent() && !metadata.hasRealtimePlaceholders()) {
+            MiniMessageUtil.clearPlaceholderApiCache(player.getUniqueId(), id);
+        }
         if (data.isDirty()) {
             return true;
         }
 
-        int pageIndex = normalizePageIndex(data.getCurrentPageIndex());
-        HologramPage page = pages.get(pageIndex);
         if (data.isPageContentDirty(pageIndex, page)) {
             return true;
         }
 
-        return !canSkipDynamicRender(player, page, pageIndex, data);
+        return !canSkipDynamicRender(player, page, pageIndex, data, metadata);
     }
 
     private void refreshDynamicNow(Player player) {
@@ -851,11 +986,6 @@ public class AxoHologramImpl implements Hologram {
             return;
         }
 
-        if (canSkipDynamicRender(player, page, pageIndex, data)) {
-            data.setClean();
-            return;
-        }
-
         if (!data.setDynamicRefreshOnly()) {
             return;
         }
@@ -867,13 +997,14 @@ public class AxoHologramImpl implements Hologram {
             return;
         }
 
-        for (UUID uuid : new ArrayList<>(viewers.keySet())) {
+        for (Map.Entry<UUID, PlayerHologramData> entry : viewers.entrySet()) {
+            UUID uuid = entry.getKey();
             Player player = Bukkit.getPlayer(uuid);
             if (player == null || !player.isOnline()) {
-                viewers.remove(uuid);
+                viewers.remove(uuid, entry.getValue());
                 continue;
             }
-            PlayerHologramData data = viewers.get(uuid);
+            PlayerHologramData data = entry.getValue();
             if (data == null || !data.isVisibleToPlayer()) {
                 continue;
             }
@@ -963,7 +1094,7 @@ public class AxoHologramImpl implements Hologram {
     @Override
     public boolean requiresPeriodicRefresh() {
         if (!enabled) {
-            setPeriodicRefreshState(false, false, false, false);
+            setPeriodicRefreshState(false, false, false, false, false);
             return false;
         }
 
@@ -1000,10 +1131,12 @@ public class AxoHologramImpl implements Hologram {
     }
 
     private void refreshPeriodicRefreshState() {
-        boolean alwaysRefreshStatic = !plugin.getConfigManager().getConfig().getBoolean("performance.static-holograms-never-update", true);
+        DynamicRefreshRuntimeConfig config = plugin.getConfigManager().getDynamicRefreshRuntimeConfig();
+        boolean alwaysRefreshStatic = !config.staticHologramsNeverUpdate();
         boolean autoRefresh = updateTextInterval > 0L;
         boolean dynamicRefresh = false;
         boolean heavyRefresh = false;
+        boolean realtimeRefresh = false;
         for (HologramPage page : pages) {
             for (HologramLine line : page.getLines()) {
                 if (line instanceof TextLineImpl textLine && hasDynamicPlaceholders(textLine.getContent())) {
@@ -1011,34 +1144,43 @@ public class AxoHologramImpl implements Hologram {
                     if (hasHeavyPlaceholders(textLine.getContent())) {
                         heavyRefresh = true;
                     }
+                    if (hasRealtimePlaceholders(textLine.getContent())) {
+                        realtimeRefresh = true;
+                    }
                 }
                 if (line instanceof ItemLineImpl itemLine && itemLineRequiresDynamicRefresh(itemLine)) {
                     dynamicRefresh = true;
                     if (hasHeavyPlaceholders(itemLine.getContent())) {
                         heavyRefresh = true;
                     }
+                    if (hasRealtimePlaceholders(itemLine.getContent())) {
+                        realtimeRefresh = true;
+                    }
                 }
-                if (dynamicRefresh && heavyRefresh) {
+                if (dynamicRefresh && heavyRefresh && realtimeRefresh) {
                     break;
                 }
             }
-            if (dynamicRefresh && heavyRefresh) {
+            if (dynamicRefresh && heavyRefresh && realtimeRefresh) {
                 break;
             }
         }
 
         boolean refreshRequired = alwaysRefreshStatic || autoRefresh || dynamicRefresh;
         boolean dynamicContent = autoRefresh || dynamicRefresh;
-        setPeriodicRefreshState(refreshRequired, dynamicRefresh, dynamicContent, heavyRefresh);
+        setPeriodicRefreshState(refreshRequired, dynamicRefresh, dynamicContent, heavyRefresh, realtimeRefresh);
     }
 
-    private void setPeriodicRefreshState(boolean refreshRequired, boolean dynamicPlaceholderRefresh, boolean dynamicContent, boolean heavyRefresh) {
+    private void setPeriodicRefreshState(boolean refreshRequired, boolean dynamicPlaceholderRefresh, boolean dynamicContent, boolean heavyRefresh, boolean realtimeRefresh) {
         periodicRefreshRequired = refreshRequired;
         dynamicPlaceholderRefreshRequired = dynamicPlaceholderRefresh;
         hasDynamicContent = dynamicContent;
         needsRefresh = refreshRequired;
         staticHologram = !refreshRequired && !dynamicContent;
         heavyPeriodicRefresh = heavyRefresh;
+        realtimePeriodicRefresh = realtimeRefresh;
+        periodicRefreshIntervalTicks = resolvePeriodicRefreshInterval();
+        nextPeriodicRefreshTick = Long.MIN_VALUE;
         periodicRefreshStateDirty = false;
     }
 
@@ -1047,27 +1189,45 @@ public class AxoHologramImpl implements Hologram {
             return false;
         }
 
-        for (UUID uuid : new ArrayList<>(viewers.keySet())) {
-            Player player = Bukkit.getPlayer(uuid);
-            PlayerHologramData data = viewers.get(uuid);
-            if (player == null || !player.isOnline()) {
-                viewers.remove(uuid);
-                continue;
+        for (PlayerHologramData data : viewers.values()) {
+            if (data != null && data.isVisibleToPlayer()) {
+                return true;
             }
-            if (data == null || !data.isVisibleToPlayer()) {
-                continue;
-            }
-            return true;
         }
         return false;
     }
 
-    @Override
-    public void updateVisibility(Player player, boolean force) {
-        if (player == null || !player.isOnline()) {
+    public void resetViewerRenderState(Player player) {
+        if (player == null) {
             return;
         }
 
+        PlayerHologramData data = viewers.get(player.getUniqueId());
+        if (data == null) {
+            return;
+        }
+
+        if (data.isVisibleToPlayer()) {
+            if (data.setVisibleToPlayer(false)) {
+                plugin.getHologramManager().onViewerRemoved(player, this);
+            }
+        }
+        data.setNeedsRespawn();
+    }
+
+    @Override
+    public void updateVisibility(Player player, boolean force) {
+        if (player == null) {
+            return;
+        }
+
+        plugin.getSchedulerUtil().runAtEntity(player, () -> updateVisibilityScheduled(player, force));
+    }
+
+    private void updateVisibilityScheduled(Player player, boolean force) {
+        if (!player.isOnline()) {
+            return;
+        }
         if (!force && canSkipVisibilityScheduling(player)) {
             return;
         }
@@ -1079,7 +1239,7 @@ public class AxoHologramImpl implements Hologram {
             });
         }
 
-        plugin.getSchedulerUtil().runAtEntity(player, () -> updateVisibilityNow(player));
+        updateVisibilityNow(player);
     }
 
     public boolean needsVisibilityRefresh(Player player) {
@@ -1380,11 +1540,7 @@ public class AxoHologramImpl implements Hologram {
         hologram.alignment = section.contains("text_alignment")
                 ? parseAlignment(section.getString("text_alignment"))
                 : parseAlignment(section.getString("style.alignment"));
-        hologram.updateTextInterval = readLong(section, -1L,
-                "text.update-interval",
-                "text_update_interval",
-                "update-text-interval",
-                "updateTextInterval");
+        hologram.updateTextInterval = readUpdateTextInterval(section);
         if (hologram.updateTextInterval <= 0L) {
             hologram.updateTextInterval = -1L;
         }
@@ -1460,8 +1616,12 @@ public class AxoHologramImpl implements Hologram {
         }
 
         boolean dynamicRefreshOnly = data.isDynamicRefreshOnly();
+        if (updateTextInterval > 0L && !dynamicRefreshOnly) {
+            MiniMessageUtil.clearPlaceholderApiCache(player.getUniqueId(), id);
+        }
+
         Location baseLocation = getLocation().add(offset);
-        if (isSimpleTextPage(page)) {
+        if (pageDynamicMetadata(page).simpleTextPage()) {
             renderSimpleTextPage(player, page, pageIndex, baseLocation, updateExisting, data, dynamicRefreshOnly);
         } else {
             renderMixedPage(player, page, pageIndex, baseLocation, updateExisting, data, dynamicRefreshOnly);
@@ -1549,35 +1709,33 @@ public class AxoHologramImpl implements Hologram {
         }
     }
 
-    private boolean canSkipDynamicRender(Player player, HologramPage page, int pageIndex, PlayerHologramData data) {
+    private boolean canSkipDynamicRender(Player player, HologramPage page, int pageIndex, PlayerHologramData data, PageDynamicMetadata metadata) {
         if (!shouldSkipUnchangedTextUpdates()) {
             return false;
         }
-        if (!pageHasDynamicRenderableContent(page)) {
+        if (!metadata.hasDynamicRenderableContent()) {
             return true;
         }
-        if (hasPermissionSensitiveLines(page)) {
+        if (metadata.hasPermissionSensitiveLines()) {
+            return false;
+        }
+        if (metadata.hasRealtimePlaceholders()) {
             return false;
         }
 
-        int rawTextHash = isSimpleTextPage(page) ? computeSimpleTextRawHash(page) : computeDynamicRawHash(page);
-        long currentTick = Bukkit.getCurrentTick();
+        int rawTextHash = metadata.simpleTextPage() ? metadata.simpleTextRawHash() : metadata.dynamicRawHash();
         RenderedPageSnapshot snapshot = data.getRenderedPageSnapshot(pageIndex);
         if (snapshot == null || snapshot.rawTextHash() != rawTextHash) {
             return false;
         }
-        if (currentTick - snapshot.refreshTick() < resolveDynamicPageCacheTicks(page)) {
-            return true;
-        }
-        if (!canUseDynamicResultHash(page)) {
+        if (!metadata.canUseDynamicResultHash()) {
             return false;
         }
 
         int dynamicResultHash = computeDynamicResultHash(player, page);
-        Integer previousResultHash = data.getDynamicResultHash(pageIndex);
-        data.setDynamicResultHash(pageIndex, dynamicResultHash);
+        Integer previousResultHash = data.updateDynamicResultHash(pageIndex, dynamicResultHash);
         if (previousResultHash != null && previousResultHash == dynamicResultHash) {
-            data.refreshRenderedPageSnapshot(pageIndex, rawTextHash, currentTick);
+            data.refreshRenderedPageSnapshot(pageIndex, rawTextHash, Bukkit.getCurrentTick());
             return true;
         }
         return false;
@@ -1594,8 +1752,9 @@ public class AxoHologramImpl implements Hologram {
     }
 
     private void renderSimpleTextPage(Player player, HologramPage page, int pageIndex, Location baseLocation, boolean updateExisting, PlayerHologramData data, boolean dynamicRefreshOnly) {
-        int rawTextHash = computeSimpleTextRawHash(page);
-        Component combined = buildSimpleTextComponent(player, page, data, pageIndex, rawTextHash, Bukkit.getCurrentTick());
+        PageDynamicMetadata metadata = pageDynamicMetadata(page);
+        int rawTextHash = metadata.simpleTextRawHash();
+        Component combined = buildSimpleTextComponent(player, page, data, pageIndex, rawTextHash, Bukkit.getCurrentTick(), metadata);
         boolean textChanged = data.isRenderedTextChanged(pageIndex, -1, combined);
         boolean packetsChanged = false;
         if (!updateExisting || !dynamicRefreshOnly || !shouldSkipUnchangedTextUpdates() || textChanged) {
@@ -1614,8 +1773,8 @@ public class AxoHologramImpl implements Hologram {
         }
     }
 
-    private Component buildSimpleTextComponent(Player player, HologramPage page, PlayerHologramData data, int pageIndex, int rawTextHash, long refreshTick) {
-        if (!pageHasDynamicTextContent(page)) {
+    private Component buildSimpleTextComponent(Player player, HologramPage page, PlayerHologramData data, int pageIndex, int rawTextHash, long refreshTick, PageDynamicMetadata metadata) {
+        if (updateTextInterval <= 0L && !metadata.hasDynamicTextContent()) {
             return simpleTextComponentCache.computeIfAbsent(String.valueOf(rawTextHash), ignored -> buildSimpleTextComponentNow(null, page));
         }
 
@@ -1644,16 +1803,6 @@ public class AxoHologramImpl implements Hologram {
                 ? Component.empty()
                 : Component.join(JoinConfiguration.newlines(), lines);
         return combined;
-    }
-
-    private int computeSimpleTextRawHash(HologramPage page) {
-        int hash = 1;
-        for (HologramLine line : page.getLines()) {
-            if (line instanceof TextLineImpl textLine) {
-                hash = 31 * hash + Objects.hashCode(textLine.getContent());
-            }
-        }
-        return hash;
     }
 
     private int computeDynamicRawHash(HologramPage page) {
@@ -1694,76 +1843,77 @@ public class AxoHologramImpl implements Hologram {
         return content;
     }
 
-    private boolean canUseDynamicResultHash(HologramPage page) {
+    private PageDynamicMetadata pageDynamicMetadata(HologramPage page) {
+        return pageDynamicMetadataCache.computeIfAbsent(page, this::computePageDynamicMetadata);
+    }
+
+    private PageDynamicMetadata computePageDynamicMetadata(HologramPage page) {
+        int dynamicRawHash = computeDynamicRawHash(page);
+        int simpleTextRawHash = 1;
+        boolean hasDynamicRenderableContent = false;
+        boolean hasDynamicTextContent = false;
+        boolean hasPlaceholderApiContent = false;
+        boolean hasHeavyPlaceholders = false;
+        boolean hasRealtimePlaceholders = false;
+        boolean hasPermissionSensitiveLines = false;
+        boolean canUseDynamicResultHash = true;
+
         for (HologramLine line : page.getLines()) {
+            String permission = line.getPermission();
+            if (permission != null && !permission.isBlank()) {
+                hasPermissionSensitiveLines = true;
+            }
+
             if (line instanceof TextLineImpl textLine) {
                 String content = textLine.getContent();
-                if (MiniMessageUtil.hasMiniPlaceholders(content)) {
-                    return false;
+                boolean placeholderApi = hasPlaceholderApiPlaceholders(content);
+                boolean animationTags = hasAnimationTags(content);
+                boolean dynamicPlaceholders = hasDynamicPlaceholders(content);
+                boolean miniPlaceholders = MiniMessageUtil.hasMiniPlaceholders(content);
+                boolean dynamicText = dynamicPlaceholders || animationTags;
+
+                simpleTextRawHash = 31 * simpleTextRawHash + Objects.hashCode(content);
+                hasDynamicTextContent |= dynamicText;
+                hasDynamicRenderableContent |= dynamicText;
+                hasPlaceholderApiContent |= placeholderApi;
+                hasHeavyPlaceholders |= hasHeavyPlaceholders(content);
+                hasRealtimePlaceholders |= hasRealtimePlaceholders(content);
+                if (miniPlaceholders || (dynamicPlaceholders && !placeholderApi && !animationTags)) {
+                    canUseDynamicResultHash = false;
                 }
-                if (hasDynamicPlaceholders(content) && !hasPlaceholderApiPlaceholders(content) && !hasAnimationTags(content)) {
-                    return false;
-                }
+                continue;
             }
-            if (line instanceof ItemLineImpl itemLine && itemLineRequiresDynamicRefresh(itemLine)) {
+
+            if (line instanceof ItemLineImpl itemLine) {
                 String content = itemLine.getContent();
-                if (MiniMessageUtil.hasMiniPlaceholders(content)
-                        || (!hasPlaceholderApiPlaceholders(content) && !hasAnimationTags(content))) {
-                    return false;
+                boolean itemDynamicRefresh = itemLineRequiresDynamicRefresh(itemLine);
+                boolean placeholderApi = hasPlaceholderApiPlaceholders(content);
+                boolean animationTags = hasAnimationTags(content);
+
+                hasDynamicRenderableContent |= itemDynamicRefresh;
+                hasPlaceholderApiContent |= placeholderApi;
+                hasHeavyPlaceholders |= hasHeavyPlaceholders(content);
+                hasRealtimePlaceholders |= hasRealtimePlaceholders(content);
+                if (itemDynamicRefresh
+                        && (MiniMessageUtil.hasMiniPlaceholders(content) || (!placeholderApi && !animationTags))) {
+                    canUseDynamicResultHash = false;
                 }
             }
         }
-        return true;
-    }
 
-    private boolean pageHasDynamicRenderableContent(HologramPage page) {
-        for (HologramLine line : page.getLines()) {
-            if (line instanceof TextLineImpl textLine && (hasDynamicPlaceholders(textLine.getContent()) || hasAnimationTags(textLine.getContent()))) {
-                return true;
-            }
-            if (line instanceof ItemLineImpl itemLine && itemLineRequiresDynamicRefresh(itemLine)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private boolean pageHasDynamicTextContent(HologramPage page) {
-        for (HologramLine line : page.getLines()) {
-            if (line instanceof TextLineImpl textLine && (hasDynamicPlaceholders(textLine.getContent()) || hasAnimationTags(textLine.getContent()))) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private long resolveDynamicPageCacheTicks(HologramPage page) {
-        long defaultInterval = resolvePeriodicRefreshInterval();
-        if (defaultInterval <= 0L) {
-            defaultInterval = plugin.getConfigManager().getConfig().getLong("placeholders.refresh-interval", 20L);
-        }
-
-        if (!pageHasHeavyPlaceholders(page)) {
-            return Math.max(1L, defaultInterval);
-        }
-
-        long heavyInterval = plugin.getConfigManager().getConfig().getLong(
-                "performance.heavy-placeholder-refresh-interval-ticks",
-                defaultInterval
+        return new PageDynamicMetadata(
+                page,
+                dynamicRawHash,
+                simpleTextRawHash,
+                hasDynamicRenderableContent,
+                hasDynamicTextContent,
+                hasPlaceholderApiContent,
+                hasHeavyPlaceholders,
+                hasRealtimePlaceholders,
+                hasPermissionSensitiveLines,
+                canUseDynamicResultHash,
+                isSimpleTextPage(page)
         );
-        return Math.max(1L, Math.max(defaultInterval, heavyInterval));
-    }
-
-    private boolean pageHasHeavyPlaceholders(HologramPage page) {
-        for (HologramLine line : page.getLines()) {
-            if (line instanceof TextLineImpl textLine && hasHeavyPlaceholders(textLine.getContent())) {
-                return true;
-            }
-            if (line instanceof ItemLineImpl itemLine && hasHeavyPlaceholders(itemLine.getContent())) {
-                return true;
-            }
-        }
-        return false;
     }
 
     private boolean isSimpleTextPage(HologramPage page) {
@@ -1851,7 +2001,7 @@ public class AxoHologramImpl implements Hologram {
 
     private Component parseTextLine(TextLineImpl textLine, Player player) {
         String content = textLine.getContent();
-        if (hasDynamicPlaceholders(content) || hasAnimationTags(content)) {
+        if (updateTextInterval > 0L || hasDynamicPlaceholders(content) || hasAnimationTags(content)) {
             return MiniMessageUtil.parse(content, player, id);
         }
         return staticLinesCache.computeIfAbsent(content, c -> MiniMessageUtil.parse(c, null));
@@ -1901,12 +2051,21 @@ public class AxoHologramImpl implements Hologram {
         return heavyPlaceholderCache.computeIfAbsent(String.valueOf(content), ignored -> MiniMessageUtil.hasHeavyPlaceholders(content));
     }
 
+    private boolean hasRealtimePlaceholders(String content) {
+        return realtimePlaceholderCache.computeIfAbsent(String.valueOf(content), ignored -> MiniMessageUtil.hasRealtimePlaceholders(content));
+    }
+
     private boolean itemLineRequiresDynamicRefresh(ItemLineImpl itemLine) {
         return dynamicPlaceholderCache.computeIfAbsent("item:" + itemLine.getContent(), ignored -> itemLine.requiresDynamicRefresh());
     }
 
     private boolean shouldSkipUnchangedTextUpdates() {
-        return plugin.getConfigManager().getConfig().getBoolean("performance.update-only-when-text-changes", true);
+        return plugin.getConfigManager().getDynamicRefreshRuntimeConfig().updateOnlyWhenTextChanges();
+    }
+
+    private void invalidatePageRenderCaches() {
+        simpleTextComponentCache.clear();
+        pageDynamicMetadataCache.clear();
     }
 
     public void markPeriodicRefreshStateDirty() {
@@ -1916,12 +2075,16 @@ public class AxoHologramImpl implements Hologram {
         needsRefresh = false;
         staticHologram = true;
         heavyPeriodicRefresh = false;
+        realtimePeriodicRefresh = false;
         dynamicPlaceholderCache.clear();
         placeholderApiCache.clear();
         animationTagCache.clear();
         heavyPlaceholderCache.clear();
-        simpleTextComponentCache.clear();
+        realtimePlaceholderCache.clear();
+        invalidatePageRenderCaches();
         lastPeriodicRefreshTick = Long.MIN_VALUE;
+        nextPeriodicRefreshTick = Long.MIN_VALUE;
+        periodicRefreshIntervalTicks = -1L;
     }
 
     private long resolvePeriodicRefreshInterval() {
@@ -1929,26 +2092,24 @@ public class AxoHologramImpl implements Hologram {
             return updateTextInterval;
         }
 
-        long defaultInterval = plugin.getConfigManager().getConfig().getLong(
-                "performance.dynamic-refresh-interval-ticks",
-                plugin.getConfigManager().getConfig().getLong(
-                        "performance.dynamic-line-update-interval-ticks",
-                        plugin.getConfigManager().getConfig().getLong("placeholders.refresh-interval", 20L)
-                )
-        );
+        DynamicRefreshRuntimeConfig config = plugin.getConfigManager().getDynamicRefreshRuntimeConfig();
+        long defaultInterval = dynamicPlaceholderRefreshRequired
+                ? config.placeholderRefreshIntervalTicks()
+                : config.dynamicRefreshIntervalTicks();
         if (defaultInterval <= 0L) {
             return -1L;
         }
 
-        if (!heavyPeriodicRefresh) {
+        if (!heavyPeriodicRefresh || realtimePeriodicRefresh) {
             return defaultInterval;
         }
 
-        long heavyInterval = plugin.getConfigManager().getConfig().getLong(
-                "performance.heavy-placeholder-refresh-interval-ticks",
-                defaultInterval
-        );
+        long heavyInterval = config.heavyPlaceholderRefreshIntervalTicks();
         return heavyInterval <= 0L ? defaultInterval : Math.max(defaultInterval, heavyInterval);
+    }
+
+    public long getPeriodicRefreshIntervalTicks() {
+        return requiresPeriodicRefresh() ? periodicRefreshIntervalTicks : -1L;
     }
 
     private boolean isCompactTextHologram() {
@@ -2068,6 +2229,93 @@ public class AxoHologramImpl implements Hologram {
         return defaultValue;
     }
 
+    private static long readUpdateTextInterval(ConfigurationSection section) {
+        return readTickInterval(section, -1L,
+                "text.update-interval",
+                "text.update_interval",
+                "text.updateTextInterval",
+                "text.updateInterval",
+                "text_update_interval",
+                "update-text-interval",
+                "update_interval",
+                "updateTextInterval",
+                "updateInterval",
+                "update-interval");
+    }
+
+    private static long readTickInterval(ConfigurationSection section, long defaultValue, String... keys) {
+        for (String key : keys) {
+            if (section.contains(key)) {
+                return parseTickIntervalValue(section.get(key), defaultValue);
+            }
+        }
+        return defaultValue;
+    }
+
+    private static long parseTickIntervalValue(Object rawValue, long defaultValue) {
+        if (rawValue instanceof Number number) {
+            return number.longValue();
+        }
+        if (rawValue == null) {
+            return defaultValue;
+        }
+
+        String raw = String.valueOf(rawValue).trim();
+        if (raw.isEmpty() || raw.equalsIgnoreCase("default")) {
+            return defaultValue;
+        }
+
+        String normalized = raw.toLowerCase(Locale.ROOT);
+        try {
+            if (normalized.endsWith("milliseconds")) {
+                return millisecondsToTicks(normalized.substring(0, normalized.length() - "milliseconds".length()));
+            }
+            if (normalized.endsWith("millisecond")) {
+                return millisecondsToTicks(normalized.substring(0, normalized.length() - "millisecond".length()));
+            }
+            if (normalized.endsWith("ms")) {
+                return millisecondsToTicks(normalized.substring(0, normalized.length() - 2));
+            }
+            if (normalized.endsWith("seconds")) {
+                return secondsToTicks(normalized.substring(0, normalized.length() - "seconds".length()));
+            }
+            if (normalized.endsWith("second")) {
+                return secondsToTicks(normalized.substring(0, normalized.length() - "second".length()));
+            }
+            if (normalized.endsWith("secs")) {
+                return secondsToTicks(normalized.substring(0, normalized.length() - 4));
+            }
+            if (normalized.endsWith("sec")) {
+                return secondsToTicks(normalized.substring(0, normalized.length() - 3));
+            }
+            if (normalized.endsWith("s")) {
+                return secondsToTicks(normalized.substring(0, normalized.length() - 1));
+            }
+            if (normalized.endsWith("ticks")) {
+                return Long.parseLong(normalized.substring(0, normalized.length() - 5).trim());
+            }
+            if (normalized.endsWith("tick")) {
+                return Long.parseLong(normalized.substring(0, normalized.length() - 4).trim());
+            }
+            if (normalized.endsWith("t")) {
+                return Long.parseLong(normalized.substring(0, normalized.length() - 1).trim());
+            }
+            return Long.parseLong(normalized);
+        } catch (NumberFormatException ignored) {
+            return defaultValue;
+        }
+    }
+
+    private static long secondsToTicks(String rawSeconds) {
+        double seconds = Double.parseDouble(rawSeconds.trim());
+        return Double.isFinite(seconds) ? Math.round(seconds * 20.0D) : -1L;
+    }
+
+    private static long millisecondsToTicks(String rawMilliseconds) {
+        double milliseconds = Double.parseDouble(rawMilliseconds.trim());
+        return Double.isFinite(milliseconds) ? Math.round(milliseconds / 50.0D) : -1L;
+    }
+
     private static String readString(ConfigurationSection section, String... keys) {
         for (String key : keys) {
             if (section.contains(key)) {
@@ -2149,7 +2397,7 @@ public class AxoHologramImpl implements Hologram {
 
         int effectiveViewDistance = viewDistance > 0
                 ? viewDistance
-                : plugin.getConfigManager().getConfig().getInt("general.view-distance", 48);
+                : plugin.getConfigManager().getVisibilityRuntimeConfig().defaultViewDistance();
         return currentLocation.distanceSquared(player.getLocation()) <= (double) effectiveViewDistance * effectiveViewDistance;
     }
 
@@ -2199,13 +2447,14 @@ public class AxoHologramImpl implements Hologram {
             return false;
         }
 
-        long effectiveInterval = resolvePeriodicRefreshInterval();
+        long effectiveInterval = periodicRefreshIntervalTicks;
         if (effectiveInterval <= 0L) {
             return false;
         }
 
-        if (lastPeriodicRefreshTick == Long.MIN_VALUE || currentTick - lastPeriodicRefreshTick >= effectiveInterval) {
+        if (nextPeriodicRefreshTick == Long.MIN_VALUE || currentTick >= nextPeriodicRefreshTick) {
             lastPeriodicRefreshTick = currentTick;
+            nextPeriodicRefreshTick = currentTick + effectiveInterval;
             return true;
         }
         return false;
@@ -2289,8 +2538,7 @@ public class AxoHologramImpl implements Hologram {
         private volatile int lastParsedTextHash;
         private volatile int lastPlaceholderResultHash;
         private final Map<Integer, HologramPage> pageContent = new ConcurrentHashMap<>();
-        private final Map<TextRenderKey, Component> renderedText = new ConcurrentHashMap<>();
-        private final Map<TextRenderKey, Integer> lastRenderedHash = new ConcurrentHashMap<>();
+        private final Map<TextRenderKey, RenderedTextState> renderedText = new ConcurrentHashMap<>();
         private final Map<Integer, RenderedPageSnapshot> renderedPageSnapshots = new ConcurrentHashMap<>();
         private final Map<Integer, Integer> dynamicResultHashes = new ConcurrentHashMap<>();
 
@@ -2355,6 +2603,15 @@ public class AxoHologramImpl implements Hologram {
             this.needsRender = false;
         }
 
+        private void setNeedsRespawn() {
+            this.dirty = true;
+            this.dynamicRefreshOnly = false;
+            this.visibleToPlayer = false;
+            this.rendered = false;
+            this.spawned = false;
+            this.needsRender = true;
+        }
+
         private boolean isDynamicRefreshOnly() {
             return dynamicRefreshOnly;
         }
@@ -2363,8 +2620,12 @@ public class AxoHologramImpl implements Hologram {
             return visibleToPlayer;
         }
 
-        private void setVisibleToPlayer(boolean visibleToPlayer) {
+        private boolean setVisibleToPlayer(boolean visibleToPlayer) {
+            if (this.visibleToPlayer == visibleToPlayer) {
+                return false;
+            }
             this.visibleToPlayer = visibleToPlayer;
+            return true;
         }
 
         private boolean isSpawned() {
@@ -2391,29 +2652,24 @@ public class AxoHologramImpl implements Hologram {
         private boolean isRenderedTextChanged(int pageIndex, int lineIndex, Component component) {
             TextRenderKey key = new TextRenderKey(pageIndex, lineIndex);
             int renderedHash = component.hashCode();
-            Integer previousHash = lastRenderedHash.get(key);
-            return previousHash == null
-                    || previousHash != renderedHash
-                    || !Objects.equals(renderedText.get(key), component);
+            RenderedTextState previous = renderedText.get(key);
+            return previous == null
+                    || previous.renderedHash() != renderedHash
+                    || !Objects.equals(previous.component(), component);
         }
 
         private void setRenderedText(int pageIndex, int lineIndex, Component component) {
             TextRenderKey key = new TextRenderKey(pageIndex, lineIndex);
-            renderedText.put(key, component);
-            lastRenderedHash.put(key, component.hashCode());
+            renderedText.put(key, new RenderedTextState(component.hashCode(), component));
         }
 
         private RenderedPageSnapshot getRenderedPageSnapshot(int pageIndex) {
             return renderedPageSnapshots.get(pageIndex);
         }
 
-        private Integer getDynamicResultHash(int pageIndex) {
-            return dynamicResultHashes.get(pageIndex);
-        }
-
-        private void setDynamicResultHash(int pageIndex, int resultHash) {
+        private Integer updateDynamicResultHash(int pageIndex, int resultHash) {
             lastPlaceholderResultHash = resultHash;
-            dynamicResultHashes.put(pageIndex, resultHash);
+            return dynamicResultHashes.put(pageIndex, resultHash);
         }
 
         private void refreshRenderedPageSnapshot(int pageIndex, int rawTextHash, long refreshTick) {
@@ -2433,6 +2689,24 @@ public class AxoHologramImpl implements Hologram {
     }
 
     private record TextRenderKey(int pageIndex, int lineIndex) {
+    }
+
+    private record RenderedTextState(int renderedHash, Component component) {
+    }
+
+    private record PageDynamicMetadata(
+            HologramPage page,
+            int dynamicRawHash,
+            int simpleTextRawHash,
+            boolean hasDynamicRenderableContent,
+            boolean hasDynamicTextContent,
+            boolean hasPlaceholderApiContent,
+            boolean hasHeavyPlaceholders,
+            boolean hasRealtimePlaceholders,
+            boolean hasPermissionSensitiveLines,
+            boolean canUseDynamicResultHash,
+            boolean simpleTextPage
+    ) {
     }
 
     private record RenderedPageSnapshot(int rawTextHash, int renderedHash, Component component, long refreshTick) {

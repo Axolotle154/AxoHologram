@@ -1,6 +1,7 @@
 package org.axostudio.axohologram.listener;
 
 import org.axostudio.axohologram.AxoHologram;
+import org.axostudio.axohologram.config.VisibilityRuntimeConfig;
 import org.axostudio.axohologram.hologram.Hologram;
 import org.axostudio.axohologram.packet.HologramPacketManager;
 import org.axostudio.axohologram.util.MiniMessageUtil;
@@ -16,6 +17,7 @@ import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
 import org.bukkit.event.server.PluginEnableEvent;
+import org.bukkit.event.server.PluginDisableEvent;
 
 import java.util.Map;
 import java.util.UUID;
@@ -29,6 +31,8 @@ public class PlayerListener implements Listener {
 
     private final AxoHologram plugin;
     private final Map<UUID, Long> scheduledVisibilityRefreshes = new ConcurrentHashMap<>();
+    private final Map<UUID, Long> mediaLookRefreshes = new ConcurrentHashMap<>();
+    private final Map<UUID, MovementState> movementStates = new ConcurrentHashMap<>();
 
     public PlayerListener(AxoHologram plugin) {
         this.plugin = plugin;
@@ -37,8 +41,10 @@ public class PlayerListener implements Listener {
     @EventHandler
     public void onPlayerJoin(PlayerJoinEvent event) {
         Player player = event.getPlayer();
+        rememberMovementPosition(player.getUniqueId(), player.getLocation());
         HologramPacketManager.hideAllTrackedEntitiesForPlayer(player);
-        scheduleVisibilityRefreshes(player, JOIN_VISIBILITY_DELAYS);
+        scheduleVisibilityRefreshes(player, true, JOIN_VISIBILITY_DELAYS);
+        scheduleMediaVisibilityRefreshes(player, JOIN_VISIBILITY_DELAYS);
         schedulePlaceholderRefreshes(player, JOIN_PLACEHOLDER_REFRESH_DELAYS);
         plugin.getSchedulerUtil().runAtEntityDelayed(player, () -> {
             if (plugin.getUpdateChecker() != null) {
@@ -53,14 +59,24 @@ public class PlayerListener implements Listener {
     }
 
     @EventHandler
+    public void onPluginDisable(PluginDisableEvent event) {
+        plugin.handleOptionalPluginDisabled(event.getPlugin().getName());
+    }
+
+    @EventHandler
     public void onPlayerQuit(PlayerQuitEvent event) {
         Player player = event.getPlayer();
         for (Hologram hologram : plugin.getHologramManager().getAllHolograms()) {
             hologram.hide(player);
         }
+        if (plugin.getMediaManager() != null) {
+            plugin.getMediaManager().removeViewer(player);
+        }
         MiniMessageUtil.clearPlaceholderApiCache(player.getUniqueId());
         plugin.getHologramManager().clearVisibilityState(player.getUniqueId());
         scheduledVisibilityRefreshes.remove(player.getUniqueId());
+        mediaLookRefreshes.remove(player.getUniqueId());
+        movementStates.remove(player.getUniqueId());
         // Clean up any remaining packet data for the player
         HologramPacketManager.destroyAllHologramLinesForPlayer(player);
     }
@@ -68,15 +84,31 @@ public class PlayerListener implements Listener {
     @EventHandler
     public void onPlayerChangedWorld(PlayerChangedWorldEvent event) {
         Player player = event.getPlayer();
-        HologramPacketManager.hideAllTrackedEntitiesForPlayer(player);
-        scheduleVisibilityRefreshes(player, TRANSITION_VISIBILITY_DELAYS);
+        rememberMovementPosition(player.getUniqueId(), player.getLocation());
+        plugin.getHologramManager().resetPlayerRenderState(player);
+        if (plugin.getMediaManager() != null) {
+            plugin.getMediaManager().removeViewer(player);
+        }
+        plugin.getHologramManager().clearVisibilityState(player.getUniqueId());
+        mediaLookRefreshes.remove(player.getUniqueId());
+        MiniMessageUtil.clearPlaceholderApiCache(player.getUniqueId());
+        scheduleVisibilityRefreshes(player, true, TRANSITION_VISIBILITY_DELAYS);
+        scheduleMediaVisibilityRefreshes(player, TRANSITION_VISIBILITY_DELAYS);
     }
 
     @EventHandler
     public void onPlayerRespawn(PlayerRespawnEvent event) {
         Player player = event.getPlayer();
-        HologramPacketManager.hideAllTrackedEntitiesForPlayer(player);
-        scheduleVisibilityRefreshes(player, JOIN_VISIBILITY_DELAYS);
+        movementStates.remove(player.getUniqueId());
+        plugin.getHologramManager().resetPlayerRenderState(player);
+        if (plugin.getMediaManager() != null) {
+            plugin.getMediaManager().removeViewer(player);
+        }
+        plugin.getHologramManager().clearVisibilityState(player.getUniqueId());
+        mediaLookRefreshes.remove(player.getUniqueId());
+        MiniMessageUtil.clearPlaceholderApiCache(player.getUniqueId());
+        scheduleVisibilityRefreshes(player, true, JOIN_VISIBILITY_DELAYS);
+        scheduleMediaVisibilityRefreshes(player, JOIN_VISIBILITY_DELAYS);
     }
 
     @EventHandler
@@ -84,8 +116,13 @@ public class PlayerListener implements Listener {
         if (event.getTo() == null) {
             return;
         }
+        if (event.getFrom().getWorld() != event.getTo().getWorld()) {
+            return;
+        }
 
         scheduleVisibilityRefreshes(event.getPlayer(), TRANSITION_VISIBILITY_DELAYS);
+        scheduleMediaVisibilityRefreshes(event.getPlayer(), TRANSITION_VISIBILITY_DELAYS);
+        rememberMovementPosition(event.getPlayer().getUniqueId(), event.getTo());
     }
 
     @EventHandler
@@ -93,14 +130,41 @@ public class PlayerListener implements Listener {
         if (event.getTo() == null) {
             return;
         }
-        if (!shouldHandleMovement(event.getFrom(), event.getTo())) {
+        UUID playerId = event.getPlayer().getUniqueId();
+        boolean shouldHandleMovement = shouldHandleMovement(playerId, event.getFrom(), event.getTo());
+        boolean shouldHandleMediaLook = shouldHandleMediaLookChange(event.getPlayer(), event.getFrom(), event.getTo());
+        if (!shouldHandleMovement && !shouldHandleMediaLook) {
             return;
         }
 
-        plugin.getHologramManager().handlePlayerMovement(event.getPlayer(), event.getTo());
+        if (shouldHandleMovement) {
+            rememberMovementPosition(playerId, event.getTo());
+            plugin.getHologramManager().handlePlayerMovement(event.getPlayer(), event.getTo());
+        }
+        if (plugin.getMediaManager() != null) {
+            plugin.getMediaManager().refreshPlayerVisibility(event.getPlayer());
+        }
+    }
+
+    private void scheduleMediaVisibilityRefreshes(Player player, long... delays) {
+        if (plugin.getMediaManager() == null || !plugin.getMediaManager().hasMediaHolograms()) {
+            return;
+        }
+
+        for (long delay : delays) {
+            plugin.getSchedulerUtil().runAtEntityDelayed(player, () -> {
+                if (player.isOnline() && plugin.getMediaManager() != null) {
+                    plugin.getMediaManager().refreshPlayerVisibility(player);
+                }
+            }, Math.max(1L, delay));
+        }
     }
 
     private void scheduleVisibilityRefreshes(Player player, long... delays) {
+        scheduleVisibilityRefreshes(player, false, delays);
+    }
+
+    private void scheduleVisibilityRefreshes(Player player, boolean force, long... delays) {
         if (plugin.getHologramManager().getAllHolograms().isEmpty()) {
             return;
         }
@@ -108,10 +172,10 @@ public class PlayerListener implements Listener {
         UUID playerId = player.getUniqueId();
         long currentTick = Bukkit.getCurrentTick();
         long minimumInterval = resolveVisibilityRefreshInterval();
-        for (long delay : resolveVisibilityRefreshDelays(delays)) {
+        for (long delay : resolveVisibilityRefreshDelays(delays, force)) {
             long targetTick = currentTick + Math.max(1L, delay);
             Long scheduledTick = scheduledVisibilityRefreshes.get(playerId);
-            if (scheduledTick != null && scheduledTick >= currentTick && Math.abs(scheduledTick - targetTick) < minimumInterval) {
+            if (!force && scheduledTick != null && scheduledTick >= currentTick && Math.abs(scheduledTick - targetTick) < minimumInterval) {
                 continue;
             }
             scheduledVisibilityRefreshes.put(playerId, targetTick);
@@ -125,7 +189,7 @@ public class PlayerListener implements Listener {
                 if (expectedTick != null && expectedTick <= Bukkit.getCurrentTick()) {
                     scheduledVisibilityRefreshes.remove(playerId, expectedTick);
                 }
-                plugin.getHologramManager().updateVisibilityForPlayer(player, false);
+                plugin.getHologramManager().updateVisibilityForPlayer(player, force);
             }, delay);
         }
     }
@@ -148,7 +212,7 @@ public class PlayerListener implements Listener {
         }
     }
 
-    private boolean shouldHandleMovement(Location from, Location to) {
+    private boolean shouldHandleMovement(UUID playerId, Location from, Location to) {
         if (from.getWorld() != to.getWorld()) {
             return true;
         }
@@ -158,20 +222,54 @@ public class PlayerListener implements Listener {
             return false;
         }
 
-        String mode = plugin.getConfigManager().getConfig().getString("performance.movement-check-mode", "BLOCK");
-        return switch (mode == null ? "BLOCK" : mode.trim().toUpperCase(java.util.Locale.ROOT)) {
-            case "CHUNK" -> from.getBlockX() >> 4 != to.getBlockX() >> 4
-                    || from.getBlockZ() >> 4 != to.getBlockZ() >> 4;
-            case "DISTANCE" -> true;
-            default -> from.getBlockX() != to.getBlockX()
-                    || from.getBlockY() != to.getBlockY()
-                    || from.getBlockZ() != to.getBlockZ();
+        MovementState previous = movementStates.computeIfAbsent(playerId, ignored -> MovementState.from(from));
+        if (!previous.sameWorld(to)) {
+            return true;
+        }
+
+        VisibilityRuntimeConfig config = plugin.getConfigManager().getVisibilityRuntimeConfig();
+        return switch (config.movementCheckMode()) {
+            case CHUNK -> previous.chunkX() != to.getBlockX() >> 4
+                    || previous.chunkZ() != to.getBlockZ() >> 4;
+            case DISTANCE -> config.hasMovedRequiredDistance(previous.x(), previous.y(), previous.z(), to.getX(), to.getY(), to.getZ());
+            case BLOCK -> previous.blockX() != to.getBlockX()
+                    || previous.blockY() != to.getBlockY()
+                    || previous.blockZ() != to.getBlockZ();
         };
     }
 
-    private long[] resolveVisibilityRefreshDelays(long[] delays) {
+    private boolean shouldHandleMediaLookChange(Player player, Location from, Location to) {
+        if (player == null
+                || plugin.getMediaManager() == null
+                || !plugin.getMediaManager().hasMediaHolograms()
+                || !plugin.getMediaManager().usesLineOfSightVisibility()) {
+            return false;
+        }
+        if (Float.compare(from.getYaw(), to.getYaw()) == 0 && Float.compare(from.getPitch(), to.getPitch()) == 0) {
+            return false;
+        }
+
+        UUID playerId = player.getUniqueId();
+        long currentTick = Bukkit.getCurrentTick();
+        long interval = Math.max(1L, plugin.getMediaManager().visibilityRefreshIntervalTicks());
+        Long previousTick = mediaLookRefreshes.get(playerId);
+        if (previousTick != null && currentTick - previousTick < interval) {
+            return false;
+        }
+        mediaLookRefreshes.put(playerId, currentTick);
+        return true;
+    }
+
+    private long[] resolveVisibilityRefreshDelays(long[] delays, boolean force) {
         if (delays.length == 0) {
             return delays;
+        }
+        if (force) {
+            long[] resolved = new long[delays.length];
+            for (int i = 0; i < delays.length; i++) {
+                resolved[i] = Math.max(1L, delays[i]);
+            }
+            return resolved;
         }
         if (isEventDrivenVisibilityMode()) {
             return new long[]{Math.max(1L, delays[0])};
@@ -196,23 +294,46 @@ public class PlayerListener implements Listener {
     }
 
     private long resolveVisibilityRefreshInterval() {
-        return plugin.getConfigManager().getConfig().getLong(
-                "performance.visibility-refresh-interval-ticks",
-                plugin.getConfigManager().getConfig().getLong("performance.visibility-refresh-interval", 100L)
-        );
+        return plugin.getConfigManager().getVisibilityRuntimeConfig().visibilityRefreshIntervalTicks();
     }
 
     private boolean isEventDrivenVisibilityMode() {
-        if (plugin.getConfigManager().getConfig().contains("visibility.periodic-task-enabled")) {
-            return !plugin.getConfigManager().getConfig().getBoolean("visibility.periodic-task-enabled");
+        return !plugin.getConfigManager().getVisibilityRuntimeConfig().periodicVisibilityTaskEnabled();
+    }
+
+    private void rememberMovementPosition(UUID playerId, Location location) {
+        if (playerId != null && location != null) {
+            movementStates.put(playerId, MovementState.from(location));
         }
-        if (plugin.getConfigManager().getConfig().contains("performance.visibility-periodic-task-enabled")) {
-            return !plugin.getConfigManager().getConfig().getBoolean("performance.visibility-periodic-task-enabled");
+    }
+
+    private record MovementState(
+            org.bukkit.World world,
+            double x,
+            double y,
+            double z,
+            int blockX,
+            int blockY,
+            int blockZ,
+            int chunkX,
+            int chunkZ
+    ) {
+        private static MovementState from(Location location) {
+            return new MovementState(
+                    location.getWorld(),
+                    location.getX(),
+                    location.getY(),
+                    location.getZ(),
+                    location.getBlockX(),
+                    location.getBlockY(),
+                    location.getBlockZ(),
+                    location.getBlockX() >> 4,
+                    location.getBlockZ() >> 4
+            );
         }
 
-        String mode = plugin.getConfigManager().getConfig().getString("visibility.mode", "EVENT_DRIVEN");
-        return mode == null
-                || mode.equalsIgnoreCase("EVENT_DRIVEN")
-                || mode.equalsIgnoreCase("EVENT");
+        private boolean sameWorld(Location location) {
+            return location != null && world == location.getWorld();
+        }
     }
 }

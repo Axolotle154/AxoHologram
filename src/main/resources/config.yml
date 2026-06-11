@@ -27,14 +27,17 @@ placeholders:
 
 performance:
   visibility-check-interval-ticks: 40
+  movement-check-mode: "DISTANCE"
   visibility-move-distance-blocks: 1.5
   dynamic-refresh-interval-ticks: 100
+  dynamic-refresh-viewer-batch-size: 8
   heavy-placeholder-refresh-interval-ticks: 200
   animation-refresh-interval-ticks: 2
   skip-refresh-when-no-viewers: true
   cache-placeholder-results: true
   placeholder-cache-seconds: 5
   heavy-placeholder-cache-seconds: 10
+  minimessage-component-cache-size: 4096
   static-holograms-never-update: true
   update-only-when-text-changes: true
   low-tps-animation-skip: true

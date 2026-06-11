@@ -20,6 +20,11 @@ import org.axostudio.axohologram.hologram.page.impl.AxoHologramPageImpl;
 import org.axostudio.axohologram.hologram.visibility.VisibilityMode;
 import org.axostudio.axohologram.importer.HologramImporter;
 import org.axostudio.axohologram.importer.ImportResult;
+import org.axostudio.axohologram.media.MapFrameData;
+import org.axostudio.axohologram.media.MediaHologram;
+import org.axostudio.axohologram.media.MediaSettings;
+import org.axostudio.axohologram.media.MediaType;
+import org.axostudio.axohologram.media.ProcessedMedia;
 import org.axostudio.axohologram.util.ColorUtil;
 import org.axostudio.axohologram.util.MessageUtil;
 import org.bukkit.Color;
@@ -34,6 +39,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.entity.TextDisplay;
 import org.bukkit.util.Vector;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -42,13 +48,16 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 
 public class HologramCommand implements BasicCommand {
 
-    private static final List<String> PAGE_ACTIONS = List.of("add", "delete", "default");
+    private static final List<String> PAGE_ACTIONS = List.of("add", "delete", "remove", "default", "set");
     private static final List<String> LINE_ACTIONS = List.of("add", "delete", "set", "offset", "height", "scale");
     private static final List<String> NPC_ACTIONS = List.of("link", "unlink", "info");
     private static final List<String> ACTION_ACTIONS = List.of("add", "remove", "list");
+    private static final List<String> BACKUP_ACTIONS = List.of("create", "restore");
+    private static final List<String> MEDIA_CREATE_TYPES = List.of("text", "item", "block", "image", "video");
     private static final List<String> VISIBILITY_MODES = List.of("all", "manual", "permission");
     private static final List<String> SHADOW_ACTIONS = List.of("strength", "radius");
     private static final List<String> ALIGNMENTS = List.of("center", "left", "right");
@@ -62,6 +71,7 @@ public class HologramCommand implements BasicCommand {
             "create",
             "clone",
             "delete",
+            "remove",
             "movehere",
             "moveto",
             "position",
@@ -72,8 +82,13 @@ public class HologramCommand implements BasicCommand {
             "translate",
             "teleport",
             "list",
+            "info",
             "import",
             "reload",
+            "play",
+            "pause",
+            "stop",
+            "backup",
             "page",
             "line",
             "addline",
@@ -89,6 +104,8 @@ public class HologramCommand implements BasicCommand {
             "visibilitydistance",
             "visibility",
             "scale",
+            "resize",
+            "size",
             "billboard",
             "shadow",
             "shadowstrength",
@@ -113,7 +130,8 @@ public class HologramCommand implements BasicCommand {
     private static final List<String> BRIGHTNESS_CHANNELS = List.of("block", "sky");
     private static final List<String> SHADOW_VALUE_SUGGESTIONS = List.of("0.0", "0.5", "1.0");
     private static final List<String> HOLOGRAM_SCALE_SUGGESTIONS = List.of("0.5", "1.0", "2.0");
-    private static final List<String> UPDATE_TEXT_INTERVAL_SUGGESTIONS = List.of("5", "20", "100", "default");
+    private static final List<String> MEDIA_SIZE_SUGGESTIONS = List.of("1", "2", "3", "4", "6", "8");
+    private static final List<String> UPDATE_TEXT_INTERVAL_SUGGESTIONS = List.of("2s", "40", "5s", "100", "default");
 
     private final AxoHologram plugin;
 
@@ -132,7 +150,7 @@ public class HologramCommand implements BasicCommand {
         switch (args[0].toLowerCase(Locale.ROOT)) {
             case "create" -> handleCreate(sender, args);
             case "clone", "copy" -> handleClone(sender, args);
-            case "delete" -> handleDelete(sender, args);
+            case "delete", "remove" -> handleDelete(sender, args);
             case "move", "movehere" -> handleMoveHere(sender, args);
             case "moveto" -> handleMoveTo(sender, args);
             case "position" -> handlePosition(sender, args);
@@ -141,9 +159,14 @@ public class HologramCommand implements BasicCommand {
             case "rotatepitch" -> handleRotatePitch(sender, args);
             case "offset", "translate" -> handleOffset(sender, args);
             case "teleport" -> handleTeleport(sender, args);
-            case "list" -> handleList(sender);
+            case "list" -> handleList(sender, args);
+            case "info" -> handleInfo(sender, args);
             case "import" -> handleImport(sender, args);
-            case "reload" -> handleReload(sender);
+            case "reload" -> handleReload(sender, args);
+            case "play" -> handlePlay(sender, args);
+            case "pause" -> handlePause(sender, args);
+            case "stop" -> handleStop(sender, args);
+            case "backup" -> handleBackup(sender, args);
             case "version", "ver" -> handleVersion(sender);
             case "page" -> handlePage(sender, args);
             case "line" -> handleLine(sender, args);
@@ -159,6 +182,7 @@ public class HologramCommand implements BasicCommand {
             case "viewdistance", "visibilitydistance" -> handleViewDistance(sender, args);
             case "visibility" -> handleVisibility(sender, args);
             case "scale" -> handleScale(sender, args);
+            case "resize", "size" -> handleResize(sender, args);
             case "billboard" -> handleBillboard(sender, args);
             case "shadow" -> handleShadow(sender, args);
             case "shadowstrength" -> handleShadowAlias(sender, args, true);
@@ -176,11 +200,21 @@ public class HologramCommand implements BasicCommand {
 
     private void handleCreate(CommandSender sender, String[] args) {
         Player player = requirePlayer(sender);
-        if (player == null || !requirePermission(sender, "axohologram.create")) {
+        if (player == null) {
             return;
         }
         if (args.length < 2) {
             MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("create-usage"));
+            return;
+        }
+
+        MediaType mediaType = parseMediaCreateType(args[1]);
+        if (mediaType != null) {
+            handleCreateMedia(sender, player, args, mediaType);
+            return;
+        }
+
+        if (!requirePermission(sender, "axohologram.create")) {
             return;
         }
 
@@ -207,7 +241,8 @@ public class HologramCommand implements BasicCommand {
             MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("invalid-hologram-id").replace("<hologram_id>", id));
             return;
         }
-        if (plugin.getHologramManager().getHologram(id) != null) {
+        if (plugin.getHologramManager().getHologram(id) != null
+                || (plugin.getMediaManager() != null && plugin.getMediaManager().getHologram(id) != null)) {
             MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("create-fail-exists").replace("<hologram_id>", id));
             return;
         }
@@ -230,12 +265,62 @@ public class HologramCommand implements BasicCommand {
         MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString(nextStepKey).replace("<hologram_id>", id));
     }
 
+    private void handleCreateMedia(CommandSender sender, Player player, String[] args, MediaType mediaType) {
+        String permission = mediaType == MediaType.VIDEO ? "axohologram.create.video" : "axohologram.create.image";
+        if (!requirePermission(sender, permission, "axohologram.create")) {
+            return;
+        }
+        if (args.length < 4) {
+            MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString(
+                    mediaType == MediaType.VIDEO ? "media-create-video-usage" : "media-create-image-usage"));
+            return;
+        }
+        if (plugin.getMediaManager() == null) {
+            MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("media-system-disabled"));
+            return;
+        }
+
+        String id = args[2];
+        String url = args[3];
+        if (!plugin.getHologramManager().isValidHologramId(id)) {
+            MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("invalid-hologram-id").replace("<hologram_id>", id));
+            return;
+        }
+        if (plugin.getHologramManager().getHologram(id) != null || plugin.getMediaManager().getHologram(id) != null) {
+            MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("create-fail-exists").replace("<hologram_id>", id));
+            return;
+        }
+
+        MediaSettings settings = MediaSettings.defaults(mediaType, plugin.getConfigManager().getMedia());
+        Location mediaLocation = player.getLocation();
+        mediaLocation.setPitch(0.0F);
+        CompletableFuture<MediaHologram> future = mediaType == MediaType.VIDEO
+                ? plugin.getMediaManager().createVideoHologram(id, url, mediaLocation, settings)
+                : plugin.getMediaManager().createImageHologram(id, url, mediaLocation, settings);
+
+        MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("media-create-started")
+                .replace("<hologram_id>", id)
+                .replace("<type>", mediaType.name().toLowerCase(Locale.ROOT)));
+        future.whenComplete((hologram, throwable) -> sendAsyncCommandMessage(sender, throwable == null
+                ? plugin.getConfigManager().getMessages().getString("media-create-success")
+                .replace("<hologram_id>", id)
+                .replace("<type>", mediaType.name().toLowerCase(Locale.ROOT))
+                : plugin.getConfigManager().getMessages().getString("media-create-failed")
+                .replace("<hologram_id>", id)
+                .replace("<reason>", rootCauseMessage(throwable))));
+    }
+
     private void handleDelete(CommandSender sender, String[] args) {
-        if (!requirePermission(sender, "axohologram.delete")) {
+        if (!requirePermission(sender, "axohologram.remove", "axohologram.delete")) {
             return;
         }
         if (args.length < 2) {
             MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("delete-usage"));
+            return;
+        }
+
+        if (plugin.getMediaManager() != null && plugin.getMediaManager().removeHologram(args[1])) {
+            MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("delete-success").replace("<hologram_id>", args[1]));
             return;
         }
 
@@ -267,7 +352,8 @@ public class HologramCommand implements BasicCommand {
             MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("invalid-hologram-id").replace("<hologram_id>", targetId));
             return;
         }
-        if (plugin.getHologramManager().getHologram(targetId) != null) {
+        if (plugin.getHologramManager().getHologram(targetId) != null
+                || (plugin.getMediaManager() != null && plugin.getMediaManager().getHologram(targetId) != null)) {
             MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("create-fail-exists").replace("<hologram_id>", targetId));
             return;
         }
@@ -297,6 +383,15 @@ public class HologramCommand implements BasicCommand {
             return;
         }
 
+        MediaHologram mediaHologram = findMediaHologram(args[1]);
+        if (mediaHologram != null) {
+            Location target = player.getLocation();
+            target.setPitch(0.0F);
+            moveMediaHologram(mediaHologram, target);
+            MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("move-success").replace("<hologram_id>", mediaHologram.getId()));
+            return;
+        }
+
         Hologram hologram = requireHologram(sender, args[1]);
         if (hologram == null) {
             return;
@@ -315,6 +410,12 @@ public class HologramCommand implements BasicCommand {
         }
         if (args.length < 5) {
             MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("moveto-usage"));
+            return;
+        }
+
+        MediaHologram mediaHologram = findMediaHologram(args[1]);
+        if (mediaHologram != null) {
+            moveMediaTo(sender, mediaHologram, args);
             return;
         }
 
@@ -372,6 +473,12 @@ public class HologramCommand implements BasicCommand {
             return;
         }
 
+        MediaHologram mediaHologram = findMediaHologram(args[1]);
+        if (mediaHologram != null) {
+            sendMediaPosition(sender, mediaHologram);
+            return;
+        }
+
         Hologram hologram = requireHologram(sender, args[1]);
         if (hologram == null) {
             return;
@@ -398,6 +505,17 @@ public class HologramCommand implements BasicCommand {
         }
         if (args.length < 2) {
             MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("center-usage"));
+            return;
+        }
+
+        MediaHologram mediaHologram = findMediaHologram(args[1]);
+        if (mediaHologram != null) {
+            Location centered = centerMediaLocation(mediaHologram);
+            moveMediaHologram(mediaHologram, centered);
+            MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("center-success")
+                    .replace("<hologram_id>", mediaHologram.getId())
+                    .replace("<x>", formatDecimal(centered.getX()))
+                    .replace("<z>", formatDecimal(centered.getZ())));
             return;
         }
 
@@ -428,6 +546,22 @@ public class HologramCommand implements BasicCommand {
             return;
         }
 
+        MediaHologram mediaHologram = findMediaHologram(args[1]);
+        if (mediaHologram != null) {
+            try {
+                float yaw = Float.parseFloat(args[2]);
+                Location location = mediaHologram.getLocation();
+                location.setYaw(yaw);
+                moveMediaHologram(mediaHologram, location);
+                MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("rotate-success")
+                        .replace("<hologram_id>", mediaHologram.getId())
+                        .replace("<degrees>", args[2]));
+            } catch (NumberFormatException exception) {
+                MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("invalid-rotation-number"));
+            }
+            return;
+        }
+
         Hologram hologram = requireHologram(sender, args[1]);
         if (hologram == null) {
             return;
@@ -455,6 +589,22 @@ public class HologramCommand implements BasicCommand {
         }
         if (args.length < 3) {
             MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("rotatepitch-usage"));
+            return;
+        }
+
+        MediaHologram mediaHologram = findMediaHologram(args[1]);
+        if (mediaHologram != null) {
+            try {
+                float pitch = Float.parseFloat(args[2]);
+                Location location = mediaHologram.getLocation();
+                location.setPitch(pitch);
+                moveMediaHologram(mediaHologram, location);
+                MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("rotatepitch-success")
+                        .replace("<hologram_id>", mediaHologram.getId())
+                        .replace("<degrees>", args[2]));
+            } catch (NumberFormatException exception) {
+                MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("invalid-rotation-number"));
+            }
             return;
         }
 
@@ -537,24 +687,44 @@ public class HologramCommand implements BasicCommand {
         MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("teleport-success").replace("<hologram_id>", hologram.getId()));
     }
 
-    private void handleList(CommandSender sender) {
+    private void handleList(CommandSender sender, String[] args) {
         if (!requirePermission(sender, "axohologram.list")) {
+            return;
+        }
+        if (args.length >= 2 && args[1].equalsIgnoreCase("menu")) {
+            Player player = requirePlayer(sender);
+            if (player != null) {
+                plugin.getHologramListMenu().open(player, 0);
+            }
             return;
         }
 
         List<Hologram> holograms = new ArrayList<>(plugin.getHologramManager().getAllHolograms());
-        if (holograms.isEmpty()) {
+        List<MediaHologram> mediaHolograms = plugin.getMediaManager() == null
+                ? List.of()
+                : new ArrayList<>(plugin.getMediaManager().getAllMediaHolograms());
+        if (holograms.isEmpty() && mediaHolograms.isEmpty()) {
             MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("list-empty"));
             return;
         }
 
-        MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("list-header").replace("<count>", String.valueOf(holograms.size())));
+        MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("list-header").replace("<count>", String.valueOf(holograms.size() + mediaHolograms.size())));
         for (Hologram hologram : holograms) {
             Location location = hologram.getLocation();
             String worldName = hologram.getWorldName() == null ? "unknown" : hologram.getWorldName();
             String locationString = String.format(Locale.US, "%.1f, %.1f, %.1f in %s", location.getX(), location.getY(), location.getZ(), worldName);
             MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("list-entry")
                     .replace("<hologram_id>", hologram.getId())
+                    .replace("<location>", locationString));
+        }
+        for (MediaHologram hologram : mediaHolograms) {
+            Location location = hologram.getLocation();
+            String worldName = hologram.getWorldName() == null ? "unknown" : hologram.getWorldName();
+            String locationString = String.format(Locale.US, "%.1f, %.1f, %.1f in %s", location.getX(), location.getY(), location.getZ(), worldName);
+            MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("media-list-entry")
+                    .replace("<hologram_id>", hologram.getId())
+                    .replace("<type>", hologram.getType().name())
+                    .replace("<state>", hologram.getState().name())
                     .replace("<location>", locationString));
         }
     }
@@ -598,13 +768,120 @@ public class HologramCommand implements BasicCommand {
         sendImportResult(sender, result);
     }
 
-    private void handleReload(CommandSender sender) {
+    private void handleInfo(CommandSender sender, String[] args) {
+        if (!requirePermission(sender, "axohologram.info", "axohologram.list")) {
+            return;
+        }
+        if (args.length < 2) {
+            MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("info-usage"));
+            return;
+        }
+
+        String id = args[1];
+        MediaHologram media = plugin.getMediaManager() == null ? null : plugin.getMediaManager().getHologram(id);
+        if (media != null) {
+            sendMediaInfo(sender, media);
+            return;
+        }
+
+        Hologram hologram = requireHologram(sender, id);
+        if (hologram == null) {
+            return;
+        }
+        Location location = hologram.getLocation();
+        MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("info-normal")
+                .replace("<hologram_id>", hologram.getId())
+                .replace("<world>", hologram.getWorldName() == null ? "unknown" : hologram.getWorldName())
+                .replace("<x>", formatDecimal(location.getX()))
+                .replace("<y>", formatDecimal(location.getY()))
+                .replace("<z>", formatDecimal(location.getZ()))
+                .replace("<pages>", String.valueOf(hologram.getPages().size()))
+                .replace("<view_distance>", hologram.getViewDistance() > 0 ? String.valueOf(hologram.getViewDistance()) : "default"));
+    }
+
+    private void handleReload(CommandSender sender, String[] args) {
         if (!requirePermission(sender, "axohologram.reload")) {
+            return;
+        }
+
+        if (args.length >= 2) {
+            String id = args[1];
+            boolean reloaded = (plugin.getMediaManager() != null && plugin.getMediaManager().reloadHologram(id))
+                    || plugin.getHologramManager().reloadHologram(id);
+            MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString(reloaded ? "reload-id-success" : "reload-id-failed")
+                    .replace("<hologram_id>", id));
             return;
         }
 
         plugin.reloadPluginState();
         MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("reload-success"));
+    }
+
+    private void handlePlay(CommandSender sender, String[] args) {
+        handleVideoControl(sender, args, "axohologram.video.play", "video-play-usage", "video-play-success", "play");
+    }
+
+    private void handlePause(CommandSender sender, String[] args) {
+        handleVideoControl(sender, args, "axohologram.video.pause", "video-pause-usage", "video-pause-success", "pause");
+    }
+
+    private void handleStop(CommandSender sender, String[] args) {
+        handleVideoControl(sender, args, "axohologram.video.stop", "video-stop-usage", "video-stop-success", "stop");
+    }
+
+    private void handleVideoControl(CommandSender sender, String[] args, String permission, String usageKey, String successKey, String action) {
+        if (!requirePermission(sender, permission)) {
+            return;
+        }
+        if (args.length < 2) {
+            MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString(usageKey));
+            return;
+        }
+
+        boolean success = switch (action) {
+            case "play" -> plugin.getMediaManager() != null && plugin.getMediaManager().playVideo(args[1]);
+            case "pause" -> plugin.getMediaManager() != null && plugin.getMediaManager().pauseVideo(args[1]);
+            case "stop" -> plugin.getMediaManager() != null && plugin.getMediaManager().stopVideo(args[1]);
+            default -> false;
+        };
+        if (!success) {
+            MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("media-video-not-ready").replace("<hologram_id>", args[1]));
+            return;
+        }
+        MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString(successKey).replace("<hologram_id>", args[1]));
+    }
+
+    private void handleBackup(CommandSender sender, String[] args) {
+        if (!requirePermission(sender, "axohologram.admin")) {
+            return;
+        }
+        if (args.length < 2) {
+            MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("backup-usage"));
+            return;
+        }
+
+        switch (args[1].toLowerCase(Locale.ROOT)) {
+            case "create" -> {
+                try {
+                    String name = plugin.getBackupManager().createBackup().getName();
+                    MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("backup-create-success")
+                            .replace("<file>", name));
+                } catch (IOException exception) {
+                    MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("backup-create-failed")
+                            .replace("<reason>", exception.getMessage() == null ? exception.getClass().getSimpleName() : exception.getMessage()));
+                }
+            }
+            case "restore" -> {
+                if (args.length < 3) {
+                    MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("backup-restore-usage"));
+                    return;
+                }
+                boolean exists = plugin.getBackupManager().restoreBackup(args[2]);
+                MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString(exists ? "backup-restore-prepared" : "backup-restore-missing")
+                        .replace("<file>", args[2]));
+            }
+            default -> MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("backup-usage"));
+        }
     }
 
     private void handleVersion(CommandSender sender) {
@@ -768,8 +1045,11 @@ public class HologramCommand implements BasicCommand {
 
         switch (action) {
             case "add" -> {
+                int pageNumber = hologram.getPages().size() + 1;
                 hologram.addPage(new AxoHologramPageImpl());
-                MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("page-add-success").replace("<hologram_id>", hologram.getId()));
+                MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("page-add-success")
+                        .replace("<hologram_id>", hologram.getId())
+                        .replace("<page_number>", String.valueOf(pageNumber)));
             }
             case "remove", "delete" -> {
                 if (args.length < 4) {
@@ -998,6 +1278,7 @@ public class HologramCommand implements BasicCommand {
 
         int targetIndex = after ? anchorIndex + 1 : anchorIndex;
         page.insertLine(targetIndex, line);
+        markHologramContentChanged(hologram);
         plugin.getHologramManager().saveHologram(hologram);
         hologram.refreshViewers();
         plugin.getHologramManager().restartRefreshTask();
@@ -1028,6 +1309,7 @@ public class HologramCommand implements BasicCommand {
         }
 
         page.addLine(line);
+        markHologramContentChanged(hologram);
         plugin.getHologramManager().saveHologram(hologram);
         hologram.refreshViewers();
         plugin.getHologramManager().restartRefreshTask();
@@ -1057,6 +1339,7 @@ public class HologramCommand implements BasicCommand {
         }
 
         page.removeLine(lineIndex);
+        markHologramContentChanged(hologram);
         plugin.getHologramManager().saveHologram(hologram);
         hologram.refreshViewers();
         plugin.getHologramManager().restartRefreshTask();
@@ -1077,19 +1360,28 @@ public class HologramCommand implements BasicCommand {
             return;
         }
 
-        HologramLine line = page.getLine(lineNumber - 1);
+        int lineIndex = lineNumber - 1;
+        HologramLine line = page.getLine(lineIndex);
+        String content = String.join(" ", Arrays.copyOfRange(args, 5, args.length));
         if (line == null) {
-            MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("line-not-found")
-                    .replace("<hologram_id>", hologram.getId())
-                    .replace("<page_number>", String.valueOf(pageNumber))
-                    .replace("<line_number>", String.valueOf(lineNumber)));
+            if (lineIndex != page.getLines().size()) {
+                MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("line-not-found")
+                        .replace("<hologram_id>", hologram.getId())
+                        .replace("<page_number>", String.valueOf(pageNumber))
+                        .replace("<line_number>", String.valueOf(lineNumber)));
+                return;
+            }
+
+            HologramLine newLine = createLine(sender, LineType.TEXT, content);
+            if (newLine == null) {
+                return;
+            }
+            page.setLine(lineIndex, newLine);
+        } else if (!updateLineContent(sender, line, content)) {
             return;
         }
 
-        String content = String.join(" ", Arrays.copyOfRange(args, 5, args.length));
-        if (!updateLineContent(sender, line, content)) {
-            return;
-        }
+        markHologramContentChanged(hologram);
         plugin.getHologramManager().saveHologram(hologram);
         hologram.refreshViewers();
         plugin.getHologramManager().restartRefreshTask();
@@ -1124,6 +1416,7 @@ public class HologramCommand implements BasicCommand {
             double y = Double.parseDouble(args[6]);
             double z = Double.parseDouble(args[7]);
             line.setOffset(new Vector(x, y, z));
+            markHologramContentChanged(hologram);
             plugin.getHologramManager().saveHologram(hologram);
             hologram.refreshViewers();
             MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("offset-success")
@@ -1173,6 +1466,7 @@ public class HologramCommand implements BasicCommand {
             }
         }
 
+        markHologramContentChanged(hologram);
         plugin.getHologramManager().saveHologram(hologram);
         hologram.refreshViewers();
         String displayHeight = line.hasHeightOverride() ? String.valueOf(line.getHeight()) : "default";
@@ -1206,6 +1500,7 @@ public class HologramCommand implements BasicCommand {
             if (!applyDisplayLineScale(sender, scaleArgs, itemLine::setScale, itemLine::clearScale)) {
                 return;
             }
+            markHologramContentChanged(hologram);
             plugin.getHologramManager().saveHologram(hologram);
             hologram.refreshViewers();
             MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("line-scale-success")
@@ -1220,6 +1515,7 @@ public class HologramCommand implements BasicCommand {
             if (!applyDisplayLineScale(sender, scaleArgs, blockLine::setScale, blockLine::clearScale)) {
                 return;
             }
+            markHologramContentChanged(hologram);
             plugin.getHologramManager().saveHologram(hologram);
             hologram.refreshViewers();
             MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("line-scale-success")
@@ -1270,13 +1566,19 @@ public class HologramCommand implements BasicCommand {
             return;
         }
 
-        Hologram hologram = requireHologram(sender, args[1]);
-        if (hologram == null) {
+        Integer distance = parseViewDistance(sender, args[2]);
+        if (distance == null) {
             return;
         }
 
-        Integer distance = parseViewDistance(sender, args[2]);
-        if (distance == null) {
+        MediaHologram mediaHologram = findMediaHologram(args[1]);
+        if (mediaHologram != null) {
+            handleMediaViewDistance(sender, mediaHologram, distance);
+            return;
+        }
+
+        Hologram hologram = requireHologram(sender, args[1]);
+        if (hologram == null) {
             return;
         }
 
@@ -1284,6 +1586,27 @@ public class HologramCommand implements BasicCommand {
         String displayDistance = distance < 0 ? "default" : String.valueOf(distance);
         MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("viewdistance-success")
                 .replace("<hologram_id>", hologram.getId())
+                .replace("<distance>", displayDistance));
+    }
+
+    private void handleMediaViewDistance(CommandSender sender, MediaHologram mediaHologram, int distance) {
+        if (plugin.getMediaManager() == null) {
+            MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("media-system-disabled"));
+            return;
+        }
+
+        int resolvedDistance = distance < 0
+                ? MediaSettings.defaults(mediaHologram.getType(), plugin.getConfigManager().getMedia()).renderDistance()
+                : distance;
+        if (!plugin.getMediaManager().updateRenderDistance(mediaHologram.getId(), resolvedDistance)) {
+            MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("media-hologram-not-found")
+                    .replace("<hologram_id>", mediaHologram.getId()));
+            return;
+        }
+
+        String displayDistance = distance < 0 ? "default" : String.valueOf(resolvedDistance);
+        MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("viewdistance-success")
+                .replace("<hologram_id>", mediaHologram.getId())
                 .replace("<distance>", displayDistance));
     }
 
@@ -1324,6 +1647,12 @@ public class HologramCommand implements BasicCommand {
             return;
         }
 
+        MediaHologram mediaHologram = findMediaHologram(args[1]);
+        if (mediaHologram != null) {
+            handleMediaScale(sender, mediaHologram, args[2]);
+            return;
+        }
+
         Hologram hologram = requireHologram(sender, args[1]);
         if (hologram == null) {
             return;
@@ -1342,6 +1671,51 @@ public class HologramCommand implements BasicCommand {
                     .replace("<factor>", args[2]));
         } catch (NumberFormatException exception) {
             MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("invalid-scale-number"));
+        }
+    }
+
+    private void handleResize(CommandSender sender, String[] args) {
+        if (!requirePermission(sender, "axohologram.command.edit", "axohologram.hologram.style", "axohologram.edit")) {
+            return;
+        }
+        if (args.length < 4) {
+            MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("media-resize-usage"));
+            return;
+        }
+
+        MediaHologram mediaHologram = findMediaHologram(args[1]);
+        if (mediaHologram == null) {
+            MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("media-hologram-not-found").replace("<hologram_id>", args[1]));
+            return;
+        }
+
+        try {
+            double width = Double.parseDouble(args[2]);
+            double height = Double.parseDouble(args[3]);
+            if (!Double.isFinite(width) || !Double.isFinite(height) || width <= 0.0D || height <= 0.0D) {
+                MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("invalid-media-size-number"));
+                return;
+            }
+
+            double scale = mediaHologram.getSettings().scale();
+            if (args.length >= 5) {
+                scale = Double.parseDouble(args[4]);
+                if (!Double.isFinite(scale) || scale <= 0.0D) {
+                    MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("invalid-scale-number"));
+                    return;
+                }
+            }
+
+            MediaSettings settings = mediaHologram.getSettings().withDimensions(width, height);
+            if (args.length >= 5) {
+                settings = settings.withScale(scale);
+            }
+
+            applyMediaSettings(sender, mediaHologram, settings,
+                    mediaSettingsMessage("media-resize-started", mediaHologram, settings),
+                    mediaSettingsMessage("media-resize-success", mediaHologram, settings));
+        } catch (NumberFormatException exception) {
+            MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("invalid-media-size-number"));
         }
     }
 
@@ -1751,6 +2125,10 @@ public class HologramCommand implements BasicCommand {
             case "linkwithnpc" -> suggestLinkWithNpcAlias(args);
             case "unlinkwithnpc" -> args.length == 2 ? complete(args[1], hologramIds()) : List.of();
             case "action" -> suggestActionCommand(args);
+            case "backup" -> suggestBackupCommand(args);
+            case "play", "pause", "stop", "info", "reload" -> args.length == 2 ? complete(args[1], hologramIds()) : List.of();
+            case "resize", "size" -> suggestMediaResizeCommand(args);
+            case "list" -> args.length == 2 ? complete(args[1], List.of("menu")) : List.of();
             case "moveto" -> suggestMoveTo(source, args);
             case "brightness" -> suggestBrightness(args);
             default -> suggestSingleBranch(source, args, subcommand);
@@ -1759,10 +2137,36 @@ public class HologramCommand implements BasicCommand {
 
     private Collection<String> suggestCreateCommand(String[] args) {
         if (args.length == 2) {
-            return complete(args[1], lineTypeNames());
+            return complete(args[1], MEDIA_CREATE_TYPES);
         }
-        if (args.length == 3 && isExactLineType(args[1])) {
+        if (args.length == 3 && (isExactLineType(args[1]) || parseMediaCreateType(args[1]) != null)) {
             return List.of("<id>");
+        }
+        if (args.length == 4 && parseMediaCreateType(args[1]) != null) {
+            return List.of("https://example.com/media.png");
+        }
+        return List.of();
+    }
+
+    private Collection<String> suggestBackupCommand(String[] args) {
+        if (args.length == 2) {
+            return complete(args[1], BACKUP_ACTIONS);
+        }
+        if (args.length == 3 && args[1].equalsIgnoreCase("restore")) {
+            return List.of("<backup.zip>");
+        }
+        return List.of();
+    }
+
+    private Collection<String> suggestMediaResizeCommand(String[] args) {
+        if (args.length == 2) {
+            return complete(args[1], mediaHologramIds());
+        }
+        if (args.length == 3 || args.length == 4) {
+            return complete(args[args.length - 1], MEDIA_SIZE_SUGGESTIONS);
+        }
+        if (args.length == 5) {
+            return complete(args[4], HOLOGRAM_SCALE_SUGGESTIONS);
         }
         return List.of();
     }
@@ -2156,7 +2560,7 @@ public class HologramCommand implements BasicCommand {
 
     private Collection<String> suggestSingleBranch(CommandSourceStack source, String[] args, String subcommand) {
         return switch (subcommand) {
-            case "delete", "move", "movehere", "teleport", "rotate", "rotatepitch", "offset", "translate",
+            case "delete", "remove", "move", "movehere", "teleport", "rotate", "rotatepitch", "offset", "translate",
                  "viewdistance", "visibilitydistance", "visibility", "scale", "billboard", "background",
                  "textshadow", "seethrough", "brightness", "align", "textalignment", "position", "center",
                  "shadowstrength", "shadowradius", "updatetextinterval" ->
@@ -2249,9 +2653,16 @@ public class HologramCommand implements BasicCommand {
             page.setLine(0, new TextLineImpl(defaultText, plugin));
         }
 
+        markHologramContentChanged(hologram);
         plugin.getHologramManager().saveHologram(hologram);
         hologram.refreshViewers();
         plugin.getHologramManager().restartRefreshTask();
+    }
+
+    private void markHologramContentChanged(Hologram hologram) {
+        if (hologram instanceof AxoHologramImpl axoHologram) {
+            axoHologram.markPeriodicRefreshStateDirty();
+        }
     }
 
     private void sendInvalidContentMessage(CommandSender sender, LineType type, String content) {
@@ -2284,6 +2695,34 @@ public class HologramCommand implements BasicCommand {
         }
     }
 
+    private void sendMediaInfo(CommandSender sender, MediaHologram hologram) {
+        Location location = hologram.getLocation();
+        MediaSettings settings = hologram.getSettings();
+        String playback = hologram.getType() == MediaType.VIDEO
+                ? hologram.getPlaybackState().name() + (hologram.isAutoPaused() ? " (AUTO_PAUSED)" : "")
+                : "N/A";
+        String frames = hologram.getProcessedMedia() == null
+                ? "0"
+                : String.valueOf(hologram.getProcessedMedia().frameCount());
+        MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("info-media")
+                .replace("<hologram_id>", hologram.getId())
+                .replace("<type>", hologram.getType().name())
+                .replace("<state>", hologram.getState().name())
+                .replace("<playback>", playback)
+                .replace("<world>", hologram.getWorldName() == null ? "unknown" : hologram.getWorldName())
+                .replace("<x>", formatDecimal(location.getX()))
+                .replace("<y>", formatDecimal(location.getY()))
+                .replace("<z>", formatDecimal(location.getZ()))
+                .replace("<url>", escapeMiniMessage(hologram.getUrl().toString()))
+                .replace("<viewers>", String.valueOf(hologram.viewerCount()))
+                .replace("<frames>", frames)
+                .replace("<width>", formatDecimal(settings.width()))
+                .replace("<height>", formatDecimal(settings.height()))
+                .replace("<scale>", formatDecimal(settings.scale()))
+                .replace("<render_distance>", String.valueOf(settings.renderDistance()))
+                .replace("<status>", escapeMiniMessage(hologram.getStatusMessage())));
+    }
+
     private String escapeMiniMessage(String value) {
         return value == null ? "" : value.replace("\\", "\\\\").replace("<", "\\<");
     }
@@ -2308,21 +2747,78 @@ public class HologramCommand implements BasicCommand {
     }
 
     private Long parseUpdateInterval(CommandSender sender, String raw) {
-        if (raw.equalsIgnoreCase("default")) {
-            return -1L;
-        }
-
-        try {
-            long value = Long.parseLong(raw);
-            if (value <= 0L) {
-                MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("invalid-update-text-interval"));
-                return null;
-            }
-            return value;
-        } catch (NumberFormatException exception) {
+        if (raw == null || raw.isBlank()) {
             MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("invalid-update-text-interval"));
             return null;
         }
+        if (raw.trim().equalsIgnoreCase("default")) {
+            return -1L;
+        }
+
+        Long value = parseTickInterval(raw);
+        if (value == null || value <= 0L) {
+            MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("invalid-update-text-interval"));
+            return null;
+        }
+        return value;
+    }
+
+    private Long parseTickInterval(String raw) {
+        String normalized = raw.trim().toLowerCase(Locale.ROOT);
+        try {
+            if (normalized.endsWith("milliseconds")) {
+                return millisecondsToTicks(normalized.substring(0, normalized.length() - "milliseconds".length()));
+            }
+            if (normalized.endsWith("millisecond")) {
+                return millisecondsToTicks(normalized.substring(0, normalized.length() - "millisecond".length()));
+            }
+            if (normalized.endsWith("ms")) {
+                return millisecondsToTicks(normalized.substring(0, normalized.length() - 2));
+            }
+            if (normalized.endsWith("seconds")) {
+                return secondsToTicks(normalized.substring(0, normalized.length() - "seconds".length()));
+            }
+            if (normalized.endsWith("second")) {
+                return secondsToTicks(normalized.substring(0, normalized.length() - "second".length()));
+            }
+            if (normalized.endsWith("secs")) {
+                return secondsToTicks(normalized.substring(0, normalized.length() - 4));
+            }
+            if (normalized.endsWith("sec")) {
+                return secondsToTicks(normalized.substring(0, normalized.length() - 3));
+            }
+            if (normalized.endsWith("s")) {
+                return secondsToTicks(normalized.substring(0, normalized.length() - 1));
+            }
+            if (normalized.endsWith("ticks")) {
+                return Long.parseLong(normalized.substring(0, normalized.length() - 5).trim());
+            }
+            if (normalized.endsWith("tick")) {
+                return Long.parseLong(normalized.substring(0, normalized.length() - 4).trim());
+            }
+            if (normalized.endsWith("t")) {
+                return Long.parseLong(normalized.substring(0, normalized.length() - 1).trim());
+            }
+            return Long.parseLong(normalized);
+        } catch (NumberFormatException exception) {
+            return null;
+        }
+    }
+
+    private Long secondsToTicks(String rawSeconds) {
+        double seconds = Double.parseDouble(rawSeconds.trim());
+        if (!Double.isFinite(seconds)) {
+            return null;
+        }
+        return Math.round(seconds * 20.0D);
+    }
+
+    private Long millisecondsToTicks(String rawMilliseconds) {
+        double milliseconds = Double.parseDouble(rawMilliseconds.trim());
+        if (!Double.isFinite(milliseconds)) {
+            return null;
+        }
+        return Math.round(milliseconds / 50.0D);
     }
 
     private boolean applyDisplayLineScale(CommandSender sender, String[] args, LineScaleSetter setter, Runnable clearAction) {
@@ -2424,6 +2920,127 @@ public class HologramCommand implements BasicCommand {
         return hologram;
     }
 
+    private MediaHologram findMediaHologram(String id) {
+        return plugin.getMediaManager() == null ? null : plugin.getMediaManager().getHologram(id);
+    }
+
+    private void moveMediaTo(CommandSender sender, MediaHologram mediaHologram, String[] args) {
+        try {
+            double x = Double.parseDouble(args[2]);
+            double y = Double.parseDouble(args[3]);
+            double z = Double.parseDouble(args[4]);
+            Location current = mediaHologram.getLocation();
+            Player player = sender instanceof Player onlinePlayer ? onlinePlayer : null;
+            if (player == null && current.getWorld() == null) {
+                MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("world-unavailable").replace("<world>", mediaHologram.getWorldName()));
+                return;
+            }
+
+            Location target = new Location(
+                    player != null ? player.getWorld() : current.getWorld(),
+                    x,
+                    y,
+                    z,
+                    current.getYaw(),
+                    current.getPitch()
+            );
+            if (args.length >= 6) {
+                target.setYaw(Float.parseFloat(args[5]));
+            }
+            if (args.length >= 7) {
+                target.setPitch(Float.parseFloat(args[6]));
+            }
+
+            moveMediaHologram(mediaHologram, target);
+            MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("moveto-success")
+                    .replace("<hologram_id>", mediaHologram.getId())
+                    .replace("<x>", formatDecimal(x))
+                    .replace("<y>", formatDecimal(y))
+                    .replace("<z>", formatDecimal(z)));
+        } catch (NumberFormatException exception) {
+            MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("invalid-location-number"));
+        }
+    }
+
+    private void sendMediaPosition(CommandSender sender, MediaHologram mediaHologram) {
+        Location location = mediaHologram.getLocation();
+        MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("position-info")
+                .replace("<hologram_id>", mediaHologram.getId())
+                .replace("<world>", mediaHologram.getWorldName() == null ? "unknown" : mediaHologram.getWorldName())
+                .replace("<x>", formatDecimal(location.getX()))
+                .replace("<y>", formatDecimal(location.getY()))
+                .replace("<z>", formatDecimal(location.getZ()))
+                .replace("<yaw>", formatDecimal(location.getYaw()))
+                .replace("<pitch>", formatDecimal(location.getPitch()))
+                .replace("<tx>", "0.00")
+                .replace("<ty>", "0.00")
+                .replace("<tz>", "0.00"));
+    }
+
+    private void moveMediaHologram(MediaHologram mediaHologram, Location location) {
+        if (plugin.getMediaManager() != null) {
+            plugin.getMediaManager().moveHologram(mediaHologram.getId(), location);
+        }
+    }
+
+    private Location centerMediaLocation(MediaHologram mediaHologram) {
+        Location centered = mediaHologram.getLocation();
+        MapFrameData frame = firstMediaFrame(mediaHologram);
+        double horizontalFraction = frame != null && frame.columns() % 2 == 0 ? 0.0D : 0.5D;
+        centered.setX(Math.floor(centered.getX()) + horizontalFraction);
+        centered.setZ(Math.floor(centered.getZ()) + horizontalFraction);
+        if (frame != null) {
+            double verticalFraction = frame.rows() % 2 == 0 ? 0.0D : 0.5D;
+            centered.setY(Math.floor(centered.getY()) + verticalFraction);
+        }
+        return centered;
+    }
+
+    private MapFrameData firstMediaFrame(MediaHologram mediaHologram) {
+        ProcessedMedia processedMedia = mediaHologram.getProcessedMedia();
+        return processedMedia == null ? null : processedMedia.firstMapFrame();
+    }
+
+    private void handleMediaScale(CommandSender sender, MediaHologram mediaHologram, String rawScale) {
+        try {
+            double scale = Double.parseDouble(rawScale);
+            if (!Double.isFinite(scale) || scale <= 0.0D) {
+                MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("invalid-scale-number"));
+                return;
+            }
+
+            MediaSettings settings = mediaHologram.getSettings().withScale(scale);
+            applyMediaSettings(sender, mediaHologram, settings,
+                    mediaSettingsMessage("media-scale-started", mediaHologram, settings),
+                    mediaSettingsMessage("media-scale-success", mediaHologram, settings));
+        } catch (NumberFormatException exception) {
+            MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("invalid-scale-number"));
+        }
+    }
+
+    private void applyMediaSettings(CommandSender sender, MediaHologram mediaHologram, MediaSettings settings, String startedMessage, String successMessage) {
+        if (plugin.getMediaManager() == null) {
+            MessageUtil.sendMessage(sender, plugin.getConfigManager().getMessages().getString("media-system-disabled"));
+            return;
+        }
+
+        MessageUtil.sendMessage(sender, startedMessage);
+        plugin.getMediaManager().updateSettings(mediaHologram.getId(), settings).whenComplete((updated, throwable) ->
+                sendAsyncCommandMessage(sender, throwable == null
+                        ? successMessage
+                        : plugin.getConfigManager().getMessages().getString("media-update-failed")
+                        .replace("<hologram_id>", mediaHologram.getId())
+                        .replace("<reason>", rootCauseMessage(throwable))));
+    }
+
+    private String mediaSettingsMessage(String key, MediaHologram mediaHologram, MediaSettings settings) {
+        return plugin.getConfigManager().getMessages().getString(key)
+                .replace("<hologram_id>", mediaHologram.getId())
+                .replace("<width>", formatDecimal(settings.width()))
+                .replace("<height>", formatDecimal(settings.height()))
+                .replace("<scale>", formatDecimal(settings.scale()));
+    }
+
     private boolean requireManualPositioning(CommandSender sender, Hologram hologram) {
         String linkedNpc = hologram.getLinkedNpc();
         if (linkedNpc == null || linkedNpc.isBlank()) {
@@ -2434,6 +3051,27 @@ public class HologramCommand implements BasicCommand {
                 .replace("<hologram_id>", hologram.getId())
                 .replace("<npc_name>", linkedNpc));
         return false;
+    }
+
+    private void sendAsyncCommandMessage(CommandSender sender, String message) {
+        if (sender instanceof Player player) {
+            plugin.getSchedulerUtil().runAtEntity(player, () -> MessageUtil.sendMessage(sender, message));
+            return;
+        }
+        plugin.getSchedulerUtil().runGlobal(() -> MessageUtil.sendMessage(sender, message));
+    }
+
+    private String rootCauseMessage(Throwable throwable) {
+        if (throwable == null) {
+            return "unknown";
+        }
+        Throwable cursor = throwable;
+        while (cursor.getCause() != null) {
+            cursor = cursor.getCause();
+        }
+        return cursor.getMessage() == null || cursor.getMessage().isBlank()
+                ? cursor.getClass().getSimpleName()
+                : escapeMiniMessage(cursor.getMessage());
     }
 
     private Integer parsePositiveInt(CommandSender sender, String raw, String messageKey) {
@@ -2503,8 +3141,19 @@ public class HologramCommand implements BasicCommand {
         return null;
     }
 
+    private MediaType parseMediaCreateType(String raw) {
+        if (raw == null) {
+            return null;
+        }
+        return switch (raw.toLowerCase(Locale.ROOT)) {
+            case "image", "imagen" -> MediaType.IMAGE;
+            case "video" -> MediaType.VIDEO;
+            default -> null;
+        };
+    }
+
     private boolean isCreateTypeName(String raw) {
-        return parseCreateType(raw) != null;
+        return parseCreateType(raw) != null || parseMediaCreateType(raw) != null;
     }
 
     private Billboard parseBillboard(String raw) {
@@ -2677,11 +3326,11 @@ public class HologramCommand implements BasicCommand {
 
         Set<String> commands = new LinkedHashSet<>();
         commands.addAll(List.of("version", "ver"));
-        if (canUse(sender, "axohologram.create")) {
+        if (canUse(sender, "axohologram.create") || canUse(sender, "axohologram.create.image") || canUse(sender, "axohologram.create.video")) {
             commands.addAll(List.of("create", "clone"));
         }
-        if (canUse(sender, "axohologram.delete")) {
-            commands.add("delete");
+        if (canUse(sender, "axohologram.remove", "axohologram.delete")) {
+            commands.addAll(List.of("delete", "remove"));
         }
         if (canUse(sender, "axohologram.command.edit", "axohologram.hologram.move", "axohologram.edit")) {
             commands.addAll(List.of("movehere", "moveto", "position", "center", "rotate", "rotatepitch", "offset", "translate"));
@@ -2692,11 +3341,26 @@ public class HologramCommand implements BasicCommand {
         if (canUse(sender, "axohologram.list")) {
             commands.add("list");
         }
+        if (canUse(sender, "axohologram.info", "axohologram.list")) {
+            commands.add("info");
+        }
         if (canUse(sender, "axohologram.import")) {
             commands.add("import");
         }
         if (canUse(sender, "axohologram.reload")) {
             commands.add("reload");
+        }
+        if (canUse(sender, "axohologram.video.play")) {
+            commands.add("play");
+        }
+        if (canUse(sender, "axohologram.video.pause")) {
+            commands.add("pause");
+        }
+        if (canUse(sender, "axohologram.video.stop")) {
+            commands.add("stop");
+        }
+        if (canUse(sender, "axohologram.admin")) {
+            commands.add("backup");
         }
         if (canUse(sender, "axohologram.command.edit", "axohologram.page.edit", "axohologram.edit")) {
             commands.add("page");
@@ -2717,6 +3381,8 @@ public class HologramCommand implements BasicCommand {
         if (canUse(sender, "axohologram.command.edit", "axohologram.hologram.style", "axohologram.edit")) {
             commands.addAll(List.of(
                     "scale",
+                    "resize",
+                    "size",
                     "billboard",
                     "shadow",
                     "shadowstrength",
@@ -2738,12 +3404,33 @@ public class HologramCommand implements BasicCommand {
 
     private List<String> hologramIds() {
         Collection<Hologram> holograms = plugin.getHologramManager().getAllHolograms();
-        if (holograms.isEmpty()) {
+        Collection<MediaHologram> mediaHolograms = plugin.getMediaManager() == null
+                ? List.of()
+                : plugin.getMediaManager().getAllMediaHolograms();
+        if (holograms.isEmpty() && mediaHolograms.isEmpty()) {
             return List.of();
         }
 
-        List<String> ids = new ArrayList<>(holograms.size());
+        List<String> ids = new ArrayList<>(holograms.size() + mediaHolograms.size());
         for (Hologram hologram : holograms) {
+            ids.add(hologram.getId());
+        }
+        for (MediaHologram hologram : mediaHolograms) {
+            ids.add(hologram.getId());
+        }
+        return ids;
+    }
+
+    private List<String> mediaHologramIds() {
+        Collection<MediaHologram> mediaHolograms = plugin.getMediaManager() == null
+                ? List.of()
+                : plugin.getMediaManager().getAllMediaHolograms();
+        if (mediaHolograms.isEmpty()) {
+            return List.of();
+        }
+
+        List<String> ids = new ArrayList<>(mediaHolograms.size());
+        for (MediaHologram hologram : mediaHolograms) {
             ids.add(hologram.getId());
         }
         return ids;

@@ -46,7 +46,7 @@ public final class AnimationTickEngine {
 
         tickRate = Math.max(1L, plugin.getConfigManager().getConfig().getLong("performance.animation-refresh-interval-ticks", settings.tickRate()));
         skipAnimationsOnLowTps = plugin.getConfigManager().getConfig().getBoolean("performance.low-tps-animation-skip", settings.reduceQualityOnLowTps());
-        skipRefreshWhenNoViewers = plugin.getConfigManager().getConfig().getBoolean("performance.skip-refresh-when-no-viewers", true);
+        skipRefreshWhenNoViewers = plugin.getConfigManager().getDynamicRefreshRuntimeConfig().skipRefreshWhenNoViewers();
         lowTpsThreshold = plugin.getConfigManager().getConfig().getDouble("performance.low-tps-threshold", 17.0D);
         if (task == null) {
             task = plugin.getSchedulerUtil().runGlobalAtFixedRate(this::tick, tickRate, tickRate);

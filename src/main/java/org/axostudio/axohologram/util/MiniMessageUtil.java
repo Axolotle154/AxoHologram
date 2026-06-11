@@ -5,6 +5,7 @@ import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.minimessage.MiniMessage;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.axostudio.axohologram.AxoHologram;
+import org.axostudio.axohologram.config.DynamicRefreshRuntimeConfig;
 import org.axostudio.axohologram.integration.MiniPlaceholdersIntegration;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
@@ -26,6 +27,7 @@ public final class MiniMessageUtil {
     private static final PlainTextComponentSerializer PLAIN_TEXT = PlainTextComponentSerializer.plainText();
     private static final char SECTION_CHAR = '\u00A7';
     private static final Pattern LEGACY_HEX_PATTERN = Pattern.compile("(?i)(?:&|\u00A7)#([0-9a-f]{6})");
+    private static final Pattern PLAIN_HEX_PATTERN = Pattern.compile("(?i)#([0-9a-f]{6})(?![0-9a-f])");
     private static final Pattern PLACEHOLDER_API_PATTERN = Pattern.compile("%[^%\\s]+%");
     private static final String[] HEAVY_PLACEHOLDER_MARKERS = {
             "%ajlb_",
@@ -33,8 +35,22 @@ public final class MiniMessageUtil {
             "%vault_eco_",
             "%statistic_"
     };
+    private static final String[] REALTIME_PLACEHOLDER_MARKERS = {
+            "uptime",
+            "timer",
+            "countdown",
+            "cooldown",
+            "clock",
+            "time",
+            "remaining",
+            "seconds"
+    };
+    private static final int DEFAULT_COMPONENT_CACHE_LIMIT = 4096;
     private static final String PLACEHOLDER_API_BATCH_SEPARATOR = "__AXOHOLOGRAM_PAPI_BATCH_BREAK_9F8C4D8A__";
     private static final Map<PlaceholderCacheKey, PlaceholderCacheEntry> PLACEHOLDER_API_CACHE = new ConcurrentHashMap<>();
+    private static final Map<String, Component> MINI_MESSAGE_COMPONENT_CACHE = new ConcurrentHashMap<>();
+    private static volatile boolean placeholderApiActive;
+    private static volatile boolean miniPlaceholdersActive;
 
     private record PlaceholderCacheKey(UUID playerId, String hologramId, String text) {
     }
@@ -130,6 +146,20 @@ public final class MiniMessageUtil {
             }
         }
         return false;
+    }
+
+    public static boolean hasRealtimePlaceholders(String text) {
+        if (text == null || text.isBlank()) {
+            return false;
+        }
+
+        Matcher matcher = PLACEHOLDER_API_PATTERN.matcher(text);
+        while (matcher.find()) {
+            if (containsRealtimeMarker(matcher.group())) {
+                return true;
+            }
+        }
+        return hasMiniPlaceholders(text) && containsRealtimeMarker(text);
     }
 
     public static List<Component> parseLinesWithSharedPlaceholderApi(List<String> lines, Player player) {
@@ -274,11 +304,7 @@ public final class MiniMessageUtil {
     }
 
     private static boolean isPlaceholderApiActive() {
-        AxoHologram plugin = AxoHologram.getInstance();
-        return plugin != null
-                && plugin.getConfigManager() != null
-                && plugin.getConfigManager().getConfig().getBoolean("integrations.placeholderapi", true)
-                && Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI");
+        return placeholderApiActive;
     }
 
     private static boolean containsPlaceholderApiSyntax(String text) {
@@ -288,31 +314,68 @@ public final class MiniMessageUtil {
     }
 
     private static boolean isMiniPlaceholdersActive() {
+        return miniPlaceholdersActive;
+    }
+
+    public static void refreshRuntimeState() {
         AxoHologram plugin = AxoHologram.getInstance();
-        return plugin != null
-                && plugin.getConfigManager() != null
-                && plugin.getConfigManager().getConfig().getBoolean("integrations.miniplaceholders", true)
+        if (plugin == null || plugin.getConfigManager() == null) {
+            placeholderApiActive = false;
+            miniPlaceholdersActive = false;
+            return;
+        }
+
+        DynamicRefreshRuntimeConfig config = plugin.getConfigManager().getDynamicRefreshRuntimeConfig();
+        placeholderApiActive = config.placeholderApiIntegrationEnabled()
+                && Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI");
+        miniPlaceholdersActive = config.miniPlaceholdersIntegrationEnabled()
                 && Bukkit.getPluginManager().isPluginEnabled("MiniPlaceholders");
     }
 
     private static Component parsePreparedText(String originalText, String processedText, Player player) {
         String restoredText = restoreProtectedAnimationPlaceholders(processedText);
         String miniMessageText = convertLegacyToMiniMessage(restoredText);
+        boolean miniPlaceholdersActive = isMiniPlaceholdersActive();
+        boolean hasMiniPlaceholders = miniPlaceholdersActive
+                && miniMessageText.indexOf('<') >= 0
+                && MiniPlaceholdersIntegration.hasPlaceholderSyntax(miniMessageText);
+        int componentCacheLimit = resolveComponentCacheLimit();
+        boolean cacheable = canCachePreparedComponent(miniMessageText, hasMiniPlaceholders, componentCacheLimit);
+        if (cacheable) {
+            Component cached = MINI_MESSAGE_COMPONENT_CACHE.get(miniMessageText);
+            if (cached != null) {
+                return cached;
+            }
+        }
 
         try {
-            if (isMiniPlaceholdersActive()) {
+            Component parsed;
+            if (hasMiniPlaceholders) {
                 if (player != null) {
-                    return MINI_MESSAGE.deserialize(miniMessageText, player, MiniPlaceholdersIntegration.combinedAudiencePlaceholders());
+                    parsed = MINI_MESSAGE.deserialize(miniMessageText, player, MiniPlaceholdersIntegration.combinedAudiencePlaceholders());
+                } else {
+                    parsed = MINI_MESSAGE.deserialize(miniMessageText, MiniPlaceholdersIntegration.globalPlaceholders());
                 }
-                return MINI_MESSAGE.deserialize(miniMessageText, MiniPlaceholdersIntegration.globalPlaceholders());
+            } else {
+                parsed = MINI_MESSAGE.deserialize(miniMessageText);
             }
-            return MINI_MESSAGE.deserialize(miniMessageText);
+            if (cacheable) {
+                cachePreparedComponent(miniMessageText, parsed, componentCacheLimit);
+            }
+            return parsed;
         } catch (RuntimeException exception) {
             return Component.text(originalText);
         }
     }
 
     private static String convertLegacyToMiniMessage(String input) {
+        if (input == null || input.isEmpty()) {
+            return "";
+        }
+        if (!mayContainLegacyFormatting(input)) {
+            return input;
+        }
+
         String withHex = convertLegacyHex(input);
         StringBuilder output = new StringBuilder(withHex.length() + 32);
         Deque<String> activeFormats = new ArrayDeque<>();
@@ -373,6 +436,32 @@ public final class MiniMessageUtil {
         return output.toString();
     }
 
+    private static boolean mayContainLegacyFormatting(String input) {
+        return input.indexOf('&') >= 0 || input.indexOf(SECTION_CHAR) >= 0 || input.indexOf('#') >= 0;
+    }
+
+    private static boolean canCachePreparedComponent(String miniMessageText, boolean hasMiniPlaceholders, int cacheLimit) {
+        if (miniMessageText == null || miniMessageText.isEmpty() || cacheLimit <= 0) {
+            return false;
+        }
+        return !hasMiniPlaceholders;
+    }
+
+    private static void cachePreparedComponent(String miniMessageText, Component component, int cacheLimit) {
+        if (cacheLimit <= 0) {
+            return;
+        }
+        if (MINI_MESSAGE_COMPONENT_CACHE.size() >= cacheLimit) {
+            MINI_MESSAGE_COMPONENT_CACHE.clear();
+        }
+        MINI_MESSAGE_COMPONENT_CACHE.put(miniMessageText, component);
+    }
+
+    private static int resolveComponentCacheLimit() {
+        DynamicRefreshRuntimeConfig config = runtimeConfig();
+        return config == null ? DEFAULT_COMPONENT_CACHE_LIMIT : config.miniMessageComponentCacheSize();
+    }
+
     public static void clearPlaceholderApiCache() {
         PLACEHOLDER_API_CACHE.clear();
     }
@@ -385,11 +474,20 @@ public final class MiniMessageUtil {
         PLACEHOLDER_API_CACHE.keySet().removeIf(cacheKey -> playerId.equals(cacheKey.playerId()));
     }
 
+    public static void clearPlaceholderApiCache(UUID playerId, String hologramId) {
+        if (playerId == null || hologramId == null || hologramId.isBlank() || PLACEHOLDER_API_CACHE.isEmpty()) {
+            return;
+        }
+
+        PLACEHOLDER_API_CACHE.keySet().removeIf(cacheKey ->
+                playerId.equals(cacheKey.playerId()) && hologramId.equals(cacheKey.hologramId()));
+    }
+
     private static PlaceholderCacheKey createPlaceholderCacheKey(Player player, String hologramId, String text) {
         if (player == null || hologramId == null || hologramId.isBlank() || text == null || text.isEmpty()) {
             return null;
         }
-        if (!isPlaceholderCachingEnabled() || !hasPlaceholderApiPlaceholders(text)) {
+        if (!isPlaceholderCachingEnabled() || !hasPlaceholderApiPlaceholders(text) || hasRealtimePlaceholders(text)) {
             return null;
         }
 
@@ -402,28 +500,38 @@ public final class MiniMessageUtil {
     }
 
     private static boolean isPlaceholderCachingEnabled() {
-        AxoHologram plugin = AxoHologram.getInstance();
-        if (plugin == null || plugin.getConfigManager() == null) {
-            return false;
-        }
-
-        return plugin.getConfigManager().getConfig().getBoolean("performance.cache-placeholder-results", true);
+        DynamicRefreshRuntimeConfig config = runtimeConfig();
+        return config != null && config.placeholderResultCachingEnabled();
     }
 
     private static long resolvePlaceholderCacheSeconds(String text) {
-        AxoHologram plugin = AxoHologram.getInstance();
-        if (plugin == null || plugin.getConfigManager() == null) {
+        DynamicRefreshRuntimeConfig config = runtimeConfig();
+        if (config == null) {
             return 0L;
         }
 
         if (hasHeavyPlaceholders(text)) {
-            return Math.max(0L, plugin.getConfigManager().getConfig().getLong(
-                    "performance.heavy-placeholder-cache-seconds",
-                    plugin.getConfigManager().getConfig().getLong("performance.placeholder-cache-seconds", 0L)
-            ));
+            return config.heavyPlaceholderCacheSeconds();
         }
 
-        return Math.max(0L, plugin.getConfigManager().getConfig().getLong("performance.placeholder-cache-seconds", 0L));
+        return config.placeholderCacheSeconds();
+    }
+
+    private static DynamicRefreshRuntimeConfig runtimeConfig() {
+        AxoHologram plugin = AxoHologram.getInstance();
+        return plugin == null || plugin.getConfigManager() == null
+                ? null
+                : plugin.getConfigManager().getDynamicRefreshRuntimeConfig();
+    }
+
+    private static boolean containsRealtimeMarker(String text) {
+        String normalized = text.toLowerCase(Locale.ROOT);
+        for (String marker : REALTIME_PLACEHOLDER_MARKERS) {
+            if (normalized.contains(marker)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static String convertLegacyHex(String input) {
@@ -434,7 +542,42 @@ public final class MiniMessageUtil {
             matcher.appendReplacement(buffer, Matcher.quoteReplacement("<#" + matcher.group(1).toUpperCase() + ">"));
         }
         matcher.appendTail(buffer);
-        return buffer.toString();
+        return convertPlainHex(buffer.toString());
+    }
+
+    private static String convertPlainHex(String input) {
+        StringBuilder output = new StringBuilder(input.length() + 16);
+        int segmentStart = 0;
+        int tagStart = -1;
+
+        for (int i = 0; i < input.length(); i++) {
+            char current = input.charAt(i);
+            if (current == '<') {
+                tagStart = i;
+                continue;
+            }
+
+            if (current == '>' && tagStart >= 0) {
+                appendPlainHexSegment(output, input.substring(segmentStart, tagStart));
+                output.append(input, tagStart, i + 1);
+                segmentStart = i + 1;
+                tagStart = -1;
+            }
+        }
+
+        if (segmentStart < input.length()) {
+            appendPlainHexSegment(output, input.substring(segmentStart));
+        }
+
+        return output.toString();
+    }
+
+    private static void appendPlainHexSegment(StringBuilder output, String segment) {
+        Matcher matcher = PLAIN_HEX_PATTERN.matcher(segment);
+        while (matcher.find()) {
+            matcher.appendReplacement(output, Matcher.quoteReplacement("<#" + matcher.group(1).toUpperCase() + ">"));
+        }
+        matcher.appendTail(output);
     }
 
     private static String convertBungeeHex(String input) {

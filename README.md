@@ -22,6 +22,7 @@ AxoHologram esta orientado a hologramas de texto, item y bloque, con edicion por
 - Estilo configurable: `billboard`, `scale`, `shadow`, `background`, `brightness`, `alignment`
 - Posicionamiento por coordenadas, rotacion, offset base y offset por linea
 - Animaciones de texto y display desde un unico `animations.yml`
+- Hologramas multimedia `IMAGE` y `VIDEO` con cache async
 - Integracion opcional con AxoNPCs y FancyNPCs
 - API publica para otros plugins
 - Archivos separados por holograma en `plugins/AxoHologram/holograms/<id>.yml`
@@ -70,11 +71,38 @@ Comandos equivalentes:
 | `/holograma create <id>` | Compatibilidad legacy, crea un holograma `text` |
 | `/holograma clone <source_id> <new_id>` | Clona un holograma existente |
 | `/holograma delete <id>` | Elimina un holograma |
+| `/holograma remove <id>` | Alias para eliminar hologramas normales o multimedia |
 | `/holograma list` | Lista hologramas cargados |
-| `/holograma reload` | Recarga configuracion, hologramas y animaciones |
+| `/holograma info <id>` | Muestra informacion del holograma |
+| `/holograma import <auto\|fancy\|decent\|gholo> <all\|id>` | Importa hologramas desde otros plugins soportados |
+| `/holograma reload [id]` | Recarga todo o un holograma concreto |
 | `/holograma version` | Muestra la version actual del plugin |
 | `/holograma ver` | Alias de `version` |
 | `/holograma teleport <id>` | Teleporta al jugador al holograma |
+
+### Multimedia
+
+| Comando | Descripcion |
+|---|---|
+| `/holograma create image <id> <url>` | Crea un holograma de imagen desde URL |
+| `/holograma create video <id> <url>` | Crea un holograma de video desde URL |
+| `/holograma viewdistance <id> <distance>` | Cambia la distancia de visibilidad de imagen o video |
+| `/holograma play <id>` | Reproduce un video |
+| `/holograma pause <id>` | Pausa un video |
+| `/holograma stop <id>` | Detiene un video |
+| `/holograma backup create` | Crea un backup zip de configuracion y hologramas |
+
+El sistema multimedia usa `media.yml` y cache en:
+
+```text
+plugins/AxoHologram/cache/images
+plugins/AxoHologram/cache/videos
+plugins/AxoHologram/cache/frames
+plugins/AxoHologram/cache/thumbnails
+plugins/AxoHologram/backups
+```
+
+Los enlaces de YouTube (`youtube.com`, `youtu.be`, `shorts`, `live`, `embed`) se resuelven como preview usando el thumbnail publico del video. Para reproducir video real se necesita una URL directa `.mp4` o `.gif`.
 
 ### Posicion y movimiento
 
@@ -173,6 +201,7 @@ axohologram.view.<id>
 | `axohologram.edit` | Permiso legacy de edicion general |
 | `axohologram.reload` | Recargar el plugin |
 | `axohologram.list` | Listar hologramas |
+| `axohologram.import` | Importar hologramas desde otros plugins |
 | `axohologram.teleport` | Teleport a hologramas |
 | `axohologram.hologram.move` | Mover, rotar y cambiar offset base |
 | `axohologram.hologram.visibility` | Editar visibilidad y view distance |
@@ -182,6 +211,7 @@ axohologram.view.<id>
 | `axohologram.permission.edit` | Editar permisos de holograma |
 | `axohologram.npc.edit` | Vincular y desvincular NPCs |
 | `axohologram.npc.info` | Ver informacion del vinculo con NPCs |
+| `axohologram.update.notify` | Recibir aviso de nuevas versiones al entrar. No se hereda de `axohologram.admin` |
 | `axohologram.view.<id>` | Ver un holograma concreto si usa visibilidad por permiso |
 
 ## Formato de texto
@@ -192,6 +222,7 @@ Soporta:
 - Legacy `&`
 - Legacy `\u00A7`
 - HEX `&#RRGGBB`
+- HEX `#RRGGBB`
 - HEX estilo Bungee `&x&F&F&0&0&F&F`
 - Animaciones con `<#ANIM:nombre>texto</#ANIM>`
 - Animaciones con `<anim:nombre>texto</anim:nombre>`
@@ -203,6 +234,7 @@ Ejemplos:
 <red>Hola
 &aHola
 &#9D00FF&lTexto
+#9D00FFTexto
 &x&9&D&0&0&F&FTexto
 <#ANIM:rainbow>Hello</#ANIM>
 <#ANIM:pulse_blue>Store</#ANIM>
@@ -368,6 +400,7 @@ plugins/AxoHologram/holograms/rules.yml
 
 - El plugin esta orientado a **Paper**, no a Bukkit/Spigot como target principal.
 - Los hologramas simples de texto pueden renderizarse como un solo `TextDisplay`.
+- Los hologramas multimedia `IMAGE` y `VIDEO` tambien guardan `visibility.distance`; `settings.render-distance` se mantiene como alias legacy.
 - Los hologramas vinculados a NPCs priorizan la posicion del NPC sobre movimiento manual.
 - Los hologramas temporales creados por API no se guardan en YAML.
 
