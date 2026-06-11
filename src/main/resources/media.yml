@@ -1,0 +1,48 @@
+# ---------------------------------------------------------------- #
+#                    AxoHologram Media                  #
+# ---------------------------------------------------------------- #
+
+media-system:
+  enabled: true
+
+  images:
+    enabled: true
+    max-file-size-mb: 10
+    max-resolution: 512
+    cache: true
+
+  videos:
+    enabled: true
+    max-file-size-mb: 250
+    max-resolution: 256
+    max-fps: 20
+    default-fps: 15
+    max-frames: 900
+    cache: true
+    autoplay: true
+    auto-pause-without-viewers: true
+
+  urls:
+    timeout-seconds: 10
+    allow-private-addresses: false
+
+  youtube:
+    enabled: true
+    thumbnail-quality: hqdefault
+
+  performance:
+    render-distance: 32
+    update-interval-ticks: 2
+    max-active-videos: 3
+    max-media-per-world: 20
+    unload-when-empty: true
+    unload-delay-ticks: 100
+    visibility-check-interval-ticks: 5
+    adaptive-frame-throttle: true
+    max-frame-cost-per-tick: 1800
+    max-visual-skip-ticks: 4
+    viewer-batch-size: 6
+    line-of-sight:
+      enabled: true
+      view-angle-degrees: 75.0
+      block-occlusion: true
