@@ -30,20 +30,10 @@ AxoHologram esta orientado a hologramas de texto, item y bloque, con edicion por
 
 ## Instalacion
 
-1. Compila el proyecto:
-
-```bash
-mvn clean package
-```
-
-2. Copia el jar generado en `plugins/`.
+1. Descarga proyecto:
+2. Pon el archivo descargado en `plugins/`.
 3. Inicia el servidor.
 
-El jar se genera en:
-
-```text
-target/AxoHologram-1.1.4-alpha.jar
-```
 
 ## Comando base
 
