@@ -5,6 +5,7 @@ Sistema de hologramas para **Paper** basado en **Display Entities**.
 
 AxoHologram esta orientado a hologramas de texto, item y bloque, con edicion por comandos, paginas, formato avanzado de texto, animaciones configurables e integraciones opcionales.
 
+.........
 ## Requisitos
 
 - **Paper** `1.21.4+`
