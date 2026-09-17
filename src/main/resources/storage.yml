@@ -1,0 +1,14 @@
+# ---------------------------------------------------------------- #
+#                   AxoHologram Storage File                       #
+# ---------------------------------------------------------------- #
+
+storage:
+  type: "YAML" # Supported types: YAML (SQLite, MySQL coming in future updates)
+  yaml:
+    folder: "holograms"
+    use-subfolders-for-groups: true
+  autosave:
+    enabled: true
+    interval-seconds: 300
+  backup:
+    auto-backup-before-migration: true

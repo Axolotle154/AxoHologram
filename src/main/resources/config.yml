@@ -1,0 +1,66 @@
+# ---------------------------------------------------------------- #
+#                  AxoHologram Configuration File                  #
+# ---------------------------------------------------------------- #
+
+general:
+  language: "es_es"
+  check-updates: true
+  view-distance: 48
+  visibility-check-interval: 20
+  defaults:
+    line-spacing: 0.25
+    text-rendering:
+      horizontal-scale: 1.12
+      line-width: 2048
+    item-line-height: 0.65
+    block-line-height: 1.0
+    billboard: "center"
+    create-default-line: true
+    create-default-line-format: "<white><id></white>"
+    create-default-item-material: "PAPER"
+    create-default-block-material: "stone"
+    display-animation:
+      enabled: false
+      name: "cinematic_idle"
+
+placeholders:
+  refresh-interval: 20
+
+performance:
+  visibility-check-interval-ticks: 40
+  movement-check-mode: "DISTANCE"
+  visibility-move-distance-blocks: 1.5
+  dynamic-refresh-interval-ticks: 100
+  dynamic-refresh-viewer-batch-size: 8
+  heavy-placeholder-refresh-interval-ticks: 200
+  animation-refresh-interval-ticks: 2
+  skip-refresh-when-no-viewers: true
+  cache-placeholder-results: true
+  placeholder-cache-seconds: 5
+  heavy-placeholder-cache-seconds: 10
+  minimessage-component-cache-size: 4096
+  static-holograms-never-update: true
+  update-only-when-text-changes: true
+  low-tps-animation-skip: true
+  low-tps-threshold: 17.0
+
+integrations:
+  placeholderapi: true
+  miniplaceholders: true
+  axonpcs: true
+  fancynpcs: true
+  citizens: true
+  znpcsplus: true
+  npc-sync-interval: 10
+  npc-y-offset: 2.2
+  fancynpcs-sync-interval: 10
+  fancynpcs-y-offset: 2.2
+
+importer:
+  enabled: true
+  backup-before-import: true
+  overwrite-existing: false
+  import-animations: true
+  import-placeholders: true
+  auto-detect-installed-plugins: true
+  web-api-url: "https://axostudio.xyz/api/holograms"

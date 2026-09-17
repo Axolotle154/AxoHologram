@@ -1,0 +1,39 @@
+# Created once on a new installation. It is an ordinary hologram and can be
+# moved, edited, or permanently removed with: /holo delete animation_example
+enabled: true
+location:
+  world: world
+  x: 1.0
+  y: 56.0
+  z: 1.0
+  yaw: 0.0
+  pitch: 0.0
+translation:
+  x: 0.0
+  y: 0.0
+  z: 0.0
+visibility: ALL
+scale:
+  x: 1.0
+  y: 1.0
+  z: 1.0
+billboard: CENTER
+shadow:
+  strength: 1.0
+  radius: 0.0
+style:
+  text-shadow: false
+  see-through: false
+  alignment: CENTER
+display-animation-enabled: false
+display-animation: cinematic_idle
+default-page: 1
+pages:
+  - lines:
+      - type: TEXT
+        text:
+          - '<gray>AxoHologram animation example</gray>'
+          - '<anim:rainbow>Rainbow text</anim:rainbow>'
+          - '<anim:pulse_blue>Pulse blue</anim:pulse_blue>'
+          - '<anim:wave_aqua>Wave aqua</anim:wave_aqua>'
+          - '<anim:rainbow_cycle>Custom frame animation</anim:rainbow_cycle>'

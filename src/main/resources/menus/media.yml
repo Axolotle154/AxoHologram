@@ -1,0 +1,35 @@
+# ---------------------------------------------------------------- #
+#                    AxoHologram Media Menu                        #
+# ---------------------------------------------------------------- #
+
+title: "<gradient:#00A4E4:#00FFAA>Media: {media_id}</gradient>"
+size: 36
+
+items:
+  filler:
+    material: "GRAY_STAINED_GLASS_PANE"
+    name: " "
+    lore: []
+  play:
+    slot: 11
+    material: "LIME_DYE"
+    name: "<green>Reproducir</green>"
+    lore:
+      - "<gray>Iniciar reproducción del vídeo.</gray>"
+  pause:
+    slot: 13
+    material: "ORANGE_DYE"
+    name: "<gold>Pausar</gold>"
+    lore:
+      - "<gray>Pausar reproducción del vídeo.</gray>"
+  stop:
+    slot: 15
+    material: "RED_DYE"
+    name: "<red>Detener</red>"
+    lore:
+      - "<gray>Detener vídeo y volver al inicio.</gray>"
+  back:
+    slot: 31
+    material: "ARROW"
+    name: "<yellow>Volver</yellow>"
+    lore: []

@@ -1,0 +1,30 @@
+# ---------------------------------------------------------------- #
+#                    AxoHologram Hologram List Menu                #
+# ---------------------------------------------------------------- #
+
+title: "<gradient:#00A4E4:#00FFAA>Hologramas ({page}/{total_pages})</gradient>"
+size: 54
+content-slots: 45
+
+items:
+  filler:
+    material: "GRAY_STAINED_GLASS_PANE"
+    name: " "
+    lore: []
+  previous-page:
+    slot: 45
+    material: "ARROW"
+    name: "<yellow>Página anterior</yellow>"
+    lore:
+      - "<gray>Ir a la página {target_page}</gray>"
+  close:
+    slot: 49
+    material: "BARRIER"
+    name: "<red>Cerrar</red>"
+    lore: []
+  next-page:
+    slot: 53
+    material: "ARROW"
+    name: "<yellow>Página siguiente</yellow>"
+    lore:
+      - "<gray>Ir a la página {target_page}</gray>"

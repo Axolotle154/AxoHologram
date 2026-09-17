@@ -1,0 +1,35 @@
+# ---------------------------------------------------------------- #
+#                    AxoHologram Hologram Editor Menu              #
+# ---------------------------------------------------------------- #
+
+title: "<gradient:#00A4E4:#00FFAA>Editor: {hologram_id}</gradient>"
+size: 36
+
+items:
+  filler:
+    material: "GRAY_STAINED_GLASS_PANE"
+    name: " "
+    lore: []
+  lines:
+    slot: 11
+    material: "WRITABLE_BOOK"
+    name: "<aqua>Líneas</aqua>"
+    lore:
+      - "<gray>Gestionar líneas del holograma.</gray>"
+  pages:
+    slot: 13
+    material: "BOOK"
+    name: "<aqua>Páginas</aqua>"
+    lore:
+      - "<gray>Añadir o cambiar páginas.</gray>"
+  animations:
+    slot: 15
+    material: "AMETHYST_SHARD"
+    name: "<aqua>Animaciones</aqua>"
+    lore:
+      - "<gray>Configurar animaciones del holograma.</gray>"
+  back:
+    slot: 31
+    material: "BARRIER"
+    name: "<red>Volver</red>"
+    lore: []

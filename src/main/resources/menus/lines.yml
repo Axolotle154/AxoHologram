@@ -1,0 +1,23 @@
+# ---------------------------------------------------------------- #
+#                    AxoHologram Lines Menu                        #
+# ---------------------------------------------------------------- #
+
+title: "<gradient:#00A4E4:#00FFAA>Líneas: {hologram_id} (Pág {page})</gradient>"
+size: 54
+
+items:
+  filler:
+    material: "GRAY_STAINED_GLASS_PANE"
+    name: " "
+    lore: []
+  add-line:
+    slot: 49
+    material: "ANVIL"
+    name: "<green>Añadir Línea</green>"
+    lore:
+      - "<gray>Haz clic para añadir una nueva línea.</gray>"
+  back:
+    slot: 45
+    material: "ARROW"
+    name: "<yellow>Volver</yellow>"
+    lore: []

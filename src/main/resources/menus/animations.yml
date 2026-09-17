@@ -1,0 +1,17 @@
+# ---------------------------------------------------------------- #
+#                    AxoHologram Animations Menu                   #
+# ---------------------------------------------------------------- #
+
+title: "<gradient:#00A4E4:#00FFAA>Animaciones: {hologram_id}</gradient>"
+size: 36
+
+items:
+  filler:
+    material: "GRAY_STAINED_GLASS_PANE"
+    name: " "
+    lore: []
+  back:
+    slot: 31
+    material: "ARROW"
+    name: "<yellow>Volver</yellow>"
+    lore: []

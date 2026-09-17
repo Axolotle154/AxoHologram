@@ -1,0 +1,14 @@
+# ---------------------------------------------------------------- #
+#                   AxoHologram Visibility File                    #
+# ---------------------------------------------------------------- #
+
+visibility:
+  default-mode: "ALL"
+  check-interval-ticks: 40
+  movement-check-mode: "DISTANCE"
+  visibility-move-distance-blocks: 1.5
+  view-distance: 48
+  spatial-index:
+    chunk-search-radius: 1
+    enable-world-index: true
+    enable-chunk-index: true
