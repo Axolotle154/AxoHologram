@@ -25,7 +25,6 @@ dependencies {
     compileOnly("me.clip:placeholderapi:2.11.6")
     compileOnly("io.github.miniplaceholders:miniplaceholders-api:3.2.0")
     compileOnly("de.oliver:FancyNpcs:2.9.2")
-    compileOnly("com.github.Axolotle154:AxoNpcs:v4.1.2")
     compileOnly("net.citizensnpcs:citizens-main:2.0.35-SNAPSHOT") {
         isTransitive = false
     }
