@@ -182,11 +182,11 @@ class MediaManager(
             return target
         }
         require(uri?.scheme == null || uri.scheme.equals("file", true)) { "Only local files and HTTP(S) URLs are supported." }
-        val candidate = if (uri?.scheme.equals("file", true)) File(uri) else File(raw)
-        val root = mediaFolder.canonicalFile
-        val file = if (candidate.isAbsolute) candidate.canonicalFile else File(root, raw).canonicalFile
-        require(file.path.startsWith(root.path + File.separator)) { "Local media must be inside the media folder." }
-        require(file.isFile) { "Media file does not exist." }
+        val file = MediaSourceResolver.resolveLocal(
+            mediaFolder,
+            raw,
+            uri?.takeIf { it.scheme.equals("file", true) }
+        )
         val limit = if (type == MediaType.VIDEO) runtimeSettings.videoMaxFileSizeBytes else runtimeSettings.imageMaxFileSizeBytes
         require(file.length() <= limit) { "Local media exceeds the configured file-size limit." }
         return file
@@ -262,6 +262,10 @@ class MediaManager(
         val frame = media.frames.first()
         for (row in 0 until frame.rows) for (column in 0 until frame.columns) {
             val map = Bukkit.createMap(media.location.world!!)
+            map.renderers.toList().forEach(map::removeRenderer)
+            map.isTrackingPosition = false
+            map.isUnlimitedTracking = false
+            map.isLocked = true
             media.mapViews.add(map)
             val stack = ItemStack(Material.FILLED_MAP)
             stack.itemMeta = (stack.itemMeta as MapMeta).apply { mapView = map }
@@ -270,6 +274,10 @@ class MediaManager(
             val location = media.location.clone().add(offsetX, offsetY, 0.0)
             val display = media.location.world!!.spawn(location, ItemDisplay::class.java)
             display.setItemStack(stack)
+            // FILLED_MAP uses its ordinary inventory icon with the default
+            // ItemDisplay transform. FIXED selects the framed-map model, which
+            // renders the pixels sent through the associated MapView.
+            display.itemDisplayTransform = ItemDisplay.ItemDisplayTransform.FIXED
             display.setVisibleByDefault(false)
             display.setPersistent(false)
             display.setInvulnerable(true)

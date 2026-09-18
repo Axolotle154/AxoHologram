@@ -5,6 +5,7 @@ import org.axostudio.axohologram.api.action.HologramClickType
 import org.axostudio.axohologram.api.hologram.Hologram
 import org.axostudio.axohologram.api.hologram.HologramLine
 import org.axostudio.axohologram.api.hologram.HologramPage
+import org.axostudio.axohologram.common.text.MiniMessageUtil
 import org.axostudio.axohologram.core.hologram.action.ActionRegistry
 import org.axostudio.axohologram.core.hologram.line.LineManager
 import org.axostudio.axohologram.core.hologram.visibility.VisibilityMode
@@ -305,6 +306,10 @@ class AxoHologram(
 
     override fun refreshViewers() {
         onRefreshRequested?.invoke()
+    }
+
+    override fun requiresPeriodicRefresh(): Boolean = pages.any { page ->
+        page.lines.any { line -> MiniMessageUtil.containsPlaceholderApiToken(line.content) }
     }
 
     override fun updateVisibility(player: Player, force: Boolean) {

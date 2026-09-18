@@ -39,6 +39,7 @@ class AxoNpcsHook : NpcBridge {
     private fun allNpcs(): Collection<Any> {
         val service = service() ?: return emptyList()
         val raw = call(service, "getAllNPCs")
+            ?: call(service, "getNPCs")
             ?: call(service, "getAllNpcs")
             ?: call(service, "getNpcs")
             ?: return emptyList()

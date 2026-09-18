@@ -14,7 +14,7 @@ data class HologramPosition(
     var pitch: Float = 0.0f
 ) {
     val world: World?
-        get() = Bukkit.getWorld(worldName)
+        get() = runCatching { Bukkit.getWorld(worldName) }.getOrNull()
 
     fun toLocation(): Location? {
         val w = world ?: return null

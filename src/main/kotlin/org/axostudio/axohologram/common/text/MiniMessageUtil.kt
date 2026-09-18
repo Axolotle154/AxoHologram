@@ -72,6 +72,17 @@ object MiniMessageUtil {
         return result
     }
 
+    /**
+     * Returns true when the text contains a PlaceholderAPI token. This is
+     * intentionally kept separate from resolution so the runtime can refresh
+     * only holograms whose rendered value may change over time.
+     */
+    @JvmStatic
+    fun containsPlaceholderApiToken(text: String?): Boolean {
+        if (text.isNullOrEmpty()) return false
+        return PLACEHOLDER_API_PATTERN.matcher(text).find()
+    }
+
     @JvmStatic
     fun convertLegacyToMiniMessage(input: String): String {
         var text = input

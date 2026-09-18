@@ -76,7 +76,7 @@ class AdvancedCommands(
         add(root, "updatetextinterval", "axohologram.hologram.style", emptyList(), "/holo updatetextinterval <id> <ticks>", ::updateInterval)
 
         add(root, "action", "axohologram.command.action", emptyList(), "/holo action <add|remove|list> ...", ::action)
-        add(root, "npc", "axohologram.command.npc", emptyList(), "/holo npc <link|unlink|info> ...", ::npc)
+        add(root, "npc", "axohologram.command.npc", emptyList(), "/holo npc <hologram> <npc> | <link|unlink|info> ...", ::npc)
         add(root, "linkwithnpc", "axohologram.command.npc", emptyList(), "/holo linkwithnpc <id> <npc>") { s, a -> npcAlias(s, a, true) }
         add(root, "unlinkwithnpc", "axohologram.command.npc", emptyList(), "/holo unlinkwithnpc <id>") { s, a -> npcAlias(s, a, false) }
         add(root, "group", "axohologram.admin", emptyList(), "/holo group <list|info|set> ...", ::group)
@@ -108,11 +108,17 @@ class AdvancedCommands(
     }
 
     private fun npcSuggestions(args: Array<String>): List<String> = when {
-        args.size == 1 -> listOf("link", "unlink", "info")
-            .filter { option -> option.startsWith(args[0], ignoreCase = true) }
+        // Keep the explicit subcommands, while also supporting the short form:
+        // /holo npc <hologram> <npc>
+        args.size == 1 -> {
+            val input = args[0]
+            (listOf("link", "unlink", "info").filter { it.startsWith(input, ignoreCase = true) } + ids(input))
+                .distinct()
+        }
         args.size == 2 && args[0].equals("link", ignoreCase = true) -> ids(args[1])
         args.size == 3 && args[0].equals("link", ignoreCase = true) -> npcIds(args[2])
         args.size == 2 && (args[0].equals("unlink", ignoreCase = true) || args[0].equals("info", ignoreCase = true)) -> ids(args[1])
+        args.size == 2 -> npcIds(args[1])
         else -> emptyList()
     }
 
@@ -130,9 +136,9 @@ class AdvancedCommands(
         service.update(hologram)
     }
 
-    private fun usage(sender: CommandSender, text: String) = sender.sendMessage(MiniMessageUtil.parse("<red>Usage: $text</red>"))
-    private fun fail(sender: CommandSender, text: String) = sender.sendMessage(MiniMessageUtil.parse("<red>$text</red>"))
-    private fun ok(sender: CommandSender, text: String) = sender.sendMessage(MiniMessageUtil.parse("<green>$text</green>"))
+    private fun usage(sender: CommandSender, text: String) = sender.sendMessage(MiniMessageUtil.parse(config.withPrefix("<red>Usage: $text</red>")))
+    private fun fail(sender: CommandSender, text: String) = sender.sendMessage(MiniMessageUtil.parse(config.withPrefix("<red>$text</red>")))
+    private fun ok(sender: CommandSender, text: String) = sender.sendMessage(MiniMessageUtil.parse(config.withPrefix("<green>$text</green>")))
 
     private fun teleport(sender: CommandSender, args: Array<String>) {
         val player = sender as? Player ?: run { fail(sender, "Only players can use teleport."); return }
@@ -295,7 +301,7 @@ class AdvancedCommands(
     }
 
     private fun npc(sender: CommandSender, args: Array<String>) {
-        if (args.isEmpty()) { usage(sender, "/holo npc <link|unlink|info> ..."); return }
+        if (args.isEmpty()) { usage(sender, "/holo npc <hologram> <npc> | <link|unlink|info> ..."); return }
         when (args[0].lowercase(Locale.ROOT)) {
             "info" -> {
                 val h = id(args, 1) ?: run { fail(sender, "Hologram not found."); return }
@@ -303,7 +309,9 @@ class AdvancedCommands(
             }
             "link" -> npcAlias(sender, args.drop(1).toTypedArray(), true)
             "unlink", "remove" -> npcAlias(sender, args.drop(1).toTypedArray(), false)
-            else -> usage(sender, "/holo npc <link|unlink|info> ...")
+            // Short form kept for the command syntax used by older servers:
+            // /holo npc <hologram> <npc>
+            else -> npcAlias(sender, args, true)
         }
     }
     private fun npcAlias(sender: CommandSender, args: Array<String>, link: Boolean) { if (npcLinks == null) { fail(sender, "NPC integration is unavailable."); return }; val h = id(args) ?: run { fail(sender, "Hologram not found."); return }; if (link) { val npc = args.getOrNull(1) ?: run { usage(sender, "/holo npc link <id> <npc>"); return }; npcLinks.link(h.id, npc); save(h); ok(sender, "Hologram linked to $npc.") } else { npcLinks.unlink(h.id); save(h); ok(sender, "NPC link removed.") } }

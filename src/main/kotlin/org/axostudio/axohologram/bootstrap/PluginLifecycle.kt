@@ -11,6 +11,9 @@ import org.axostudio.axohologram.common.update.UpdateChecker
 import org.axostudio.axohologram.config.ConfigManager
 import org.axostudio.axohologram.core.hologram.HologramFactory
 import org.axostudio.axohologram.core.hologram.HologramManager
+import org.axostudio.axohologram.core.hologram.HologramReloadReport
+import org.axostudio.axohologram.core.hologram.ReloadedHologramInfo
+import org.axostudio.axohologram.core.hologram.ReloadedMediaInfo
 import org.axostudio.axohologram.core.hologram.action.ActionExecutor
 import org.axostudio.axohologram.core.hologram.action.ActionManager
 import org.axostudio.axohologram.core.hologram.line.LineType
@@ -34,6 +37,7 @@ import org.axostudio.axohologram.listener.PlayerConnectionListener
 import org.axostudio.axohologram.listener.PlayerWorldListener
 import org.axostudio.axohologram.menu.MenuManager
 import org.axostudio.axohologram.persistence.StorageManager
+import org.axostudio.axohologram.persistence.HologramLoadFailure
 import org.axostudio.axohologram.platform.packet.HologramPacketManager
 import org.bukkit.Bukkit
 import org.bukkit.plugin.java.JavaPlugin
@@ -142,11 +146,21 @@ class PluginLifecycle(
         animationManager.init()
         registry.register(AnimationManager::class.java, animationManager)
         renderer.configureAnimations(animationManager.engine) { animationManager.tickEngine.currentTick }
+        val placeholderRefreshTicks = configManager.config
+            .getLong("placeholders.refresh-interval", 20L)
+            .coerceAtLeast(1L)
+        val animationTickRate = animationManager.tickEngine.settings.tickRate.coerceAtLeast(1L)
+        val placeholderRefreshAnimationTicks =
+            ((placeholderRefreshTicks + animationTickRate - 1L) / animationTickRate).coerceAtLeast(1L)
         animationManager.tickEngine.onTick = {
             for (hologram in hologramManager.allHolograms) {
                 val hasTextAnimation = hologram.pages.any { page -> page.lines.any { it.content.contains("<anim:") } }
                 val hasDisplayAnimation = hologram.isDisplayAnimationEnabled || hologram.pages.any { page -> page.lines.any { it.hasDisplayAnimationOverride() } }
-                if (hasTextAnimation || hasDisplayAnimation) hologramManager.update(hologram)
+                val refreshPlaceholder =
+                    MiniMessageUtil.isPlaceholderApiActive &&
+                        hologram.requiresPeriodicRefresh() &&
+                        animationManager.tickEngine.currentTick % placeholderRefreshAnimationTicks == 0L
+                if (hasTextAnimation || hasDisplayAnimation || refreshPlaceholder) hologramManager.update(hologram)
             }
         }
 
@@ -226,16 +240,30 @@ class PluginLifecycle(
         }
 
         // Load saved holograms
-        val loaded = storageManager.loadAll()
-        for (h in loaded) {
-            animationManager.registry.getAssignedDisplayAnimation(h.id)?.let {
-                h.displayAnimation = it
-                h.isDisplayAnimationEnabled = true
-            }
-            hologramManager.registerHologram(h)
-            h.linkedNpc?.let { npcLinkService.link(h.id, it) }
+        val initialLoad = storageManager.loadAllWithReport()
+        for (failure in initialLoad.failures) {
+            plugin.logger.warning("Could not load hologram '${failure.id}' from ${failure.source}: ${failure.reason}")
         }
-        plugin.logger.info("Loaded ${loaded.size} holograms into service.")
+        var initialLoadedCount = 0
+        for (h in initialLoad.holograms) {
+            runCatching {
+                animationManager.registry.getAssignedDisplayAnimation(h.id)?.let {
+                    h.displayAnimation = it
+                    h.isDisplayAnimationEnabled = true
+                }
+                hologramManager.registerHologram(h)
+                h.linkedNpc?.let { npcLinkService.link(h.id, it) }
+                initialLoadedCount++
+            }.onFailure { error ->
+                plugin.logger.warning(
+                    "Could not register hologram '${h.id}': ${error.message ?: error.javaClass.simpleName}"
+                )
+            }
+        }
+        plugin.logger.info(
+            "Loaded $initialLoadedCount holograms into service" +
+                if (initialLoad.failures.isEmpty()) "." else " (${initialLoad.failures.size} failed)."
+        )
 
         // 7. Placeholders
         if (Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI")) {
@@ -304,7 +332,7 @@ class PluginLifecycle(
         plugin.logger.info("AxoHologram enabled successfully!")
     }
 
-    fun reload() {
+    fun reload(): HologramReloadReport {
         val configManager = registry.get<ConfigManager>()
         val hologramManager = registry.get<HologramManager>()
         val storageManager = registry.get<StorageManager>()
@@ -312,13 +340,21 @@ class PluginLifecycle(
         val mediaManager = registry.get<MediaManager>()
         val renderer = registry.get<HologramRenderer>()
         val npcLinkService = registry.get<NpcLinkService>()
+        val failures = mutableListOf<HologramLoadFailure>()
+        val reloaded = mutableListOf<ReloadedHologramInfo>()
 
-        configManager?.reload()
+        runCatching { configManager?.reload() }.onFailure { error ->
+            failures += reloadFailure("configuration", "config.yml", error)
+        }
         if (configManager != null && hologramManager != null) {
             hologramManager.visibilityService.config = configManager.visibilityConfig
         }
-        animationManager?.reload()
-        mediaManager?.reload()
+        runCatching { animationManager?.reload() }.onFailure { error ->
+            failures += reloadFailure("animations", "animations.yml", error)
+        }
+        runCatching { mediaManager?.reload() }.onFailure { error ->
+            failures += reloadFailure("media", "media/media.yml", error)
+        }
 
         if (hologramManager != null && storageManager != null) {
             // Despawn all current
@@ -331,27 +367,118 @@ class PluginLifecycle(
             hologramManager.repository.clear()
 
             // Reload from storage
-            val loaded = storageManager.loadAll()
-            for (h in loaded) {
-                animationManager?.registry?.getAssignedDisplayAnimation(h.id)?.let {
-                    h.displayAnimation = it
-                    h.isDisplayAnimationEnabled = true
+            val loadReport = storageManager.loadAllWithReport()
+            failures += loadReport.failures
+            val registeredIds = hashSetOf<String>()
+            for (h in loadReport.holograms.sortedBy { it.id.lowercase() }) {
+                val normalizedId = h.id.lowercase()
+                if (!registeredIds.add(normalizedId)) {
+                    failures += HologramLoadFailure(
+                        h.id,
+                        "holograms",
+                        "Duplicate hologram id found in more than one file."
+                    )
+                    continue
                 }
-                hologramManager.registerHologram(h)
-                h.linkedNpc?.let { npcLinkService?.link(h.id, it) }
+
+                runCatching {
+                    animationManager?.registry?.getAssignedDisplayAnimation(h.id)?.let {
+                        h.displayAnimation = it
+                        h.isDisplayAnimationEnabled = true
+                    }
+                    hologramManager.registerHologram(h)
+
+                    var warning: String? = if (h.location == null) {
+                        configManager?.messages?.getString(
+                            "reload-warning-world-unavailable",
+                            "World '<world>' is not loaded."
+                        )?.replace("<world>", h.worldName)
+                    } else null
+                    h.linkedNpc?.let { npcId ->
+                        runCatching { npcLinkService?.link(h.id, npcId) }.onFailure { error ->
+                            val npcWarning = configManager?.messages?.getString(
+                                "reload-warning-npc-link-failed",
+                                "NPC '<npc_name>' could not be linked: <reason>"
+                            )
+                                ?.replace("<npc_name>", npcId)
+                                ?.replace("<reason>", error.message ?: error.javaClass.simpleName)
+                            warning = listOfNotNull(
+                                warning,
+                                npcWarning
+                            ).joinToString(" ")
+                        }
+                    }
+
+                    val lineTypes = h.pages
+                        .flatMap { page -> page.lines }
+                        .map { line -> line.type.name }
+                        .distinct()
+                    reloaded += ReloadedHologramInfo(
+                        id = h.id,
+                        kind = when (lineTypes.size) {
+                            0 -> "EMPTY"
+                            1 -> lineTypes.first()
+                            else -> "MIXED"
+                        },
+                        world = h.worldName,
+                        pageCount = h.pageCount(),
+                        lineCount = h.pages.sumOf { it.lineCount() },
+                        warning = warning
+                    )
+                }.onFailure { error ->
+                    failures += reloadFailure(h.id, "holograms/${h.id}.yml", error)
+                }
             }
 
             // Render for online players
             for (player in Bukkit.getOnlinePlayers()) {
-                hologramManager.visibilityService.updatePlayerVisibility(
-                    player,
-                    hologramManager.allHolograms,
-                    onShow = { p, h -> renderer?.render(p, h) },
-                    onHide = { p, h -> renderer?.despawn(p, h) }
-                )
+                runCatching {
+                    hologramManager.visibilityService.updatePlayerVisibility(
+                        player,
+                        hologramManager.allHolograms,
+                        onShow = { p, h -> renderer?.render(p, h) },
+                        onHide = { p, h -> renderer?.despawn(p, h) }
+                    )
+                }.onFailure { error ->
+                    failures += reloadFailure(
+                        "renderer:${player.name}",
+                        "runtime",
+                        error
+                    )
+                }
             }
+
+            return HologramReloadReport(
+                holograms = reloaded.sortedBy { it.id.lowercase() },
+                media = mediaManager?.getAll().orEmpty()
+                    .map { media ->
+                        ReloadedMediaInfo(
+                            id = media.id,
+                            type = media.type.name,
+                            world = media.location.world?.name ?: "unknown"
+                        )
+                    }
+                    .sortedBy { it.id.lowercase() },
+                failures = failures,
+                skippedMediaFiles = loadReport.skippedMediaFiles
+            )
         }
+
+        failures += HologramLoadFailure(
+            id = "runtime",
+            source = "service registry",
+            reason = "Hologram or storage service is unavailable."
+        )
+        return HologramReloadReport(failures = failures)
     }
+
+    private fun reloadFailure(id: String, source: String, error: Throwable): HologramLoadFailure =
+        HologramLoadFailure(
+            id = id,
+            source = source,
+            reason = error.message?.lineSequence()?.firstOrNull()?.take(180)
+                ?: error.javaClass.simpleName
+        )
 
     fun disable() {
         plugin.logger.info("Disabling AxoHologram...")

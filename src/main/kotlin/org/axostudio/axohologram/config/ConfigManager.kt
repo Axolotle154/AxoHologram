@@ -60,13 +60,18 @@ class ConfigManager(private val plugin: Plugin) {
         saveDefaultIfMissing("media.yml", mediaFile)
         saveDefaultIfMissing("visibility.yml", visibilityFile)
         saveDefaultIfMissing("storage.yml", storageFile)
-        // 3.x installations used a single messages.yml. Do not create the new
-        // language files over that migration path, otherwise the user's custom
-        // legacy messages would silently stop being selected on first startup.
         val legacyMessagesFile = File(plugin.dataFolder, "messages.yml")
-        if (!legacyMessagesFile.exists()) {
-            saveDefaultIfMissing("lang/en_us.yml", File(langFolder, "en_us.yml"))
-            saveDefaultIfMissing("lang/es_es.yml", File(langFolder, "es_es.yml"))
+        val englishLanguageFile = findLanguageFile("en_US") ?: File(langFolder, "en_US.yml")
+        val spanishLanguageFile = findLanguageFile("es_ES") ?: File(langFolder, "es_ES.yml")
+        val hadLanguageFiles = hasLanguageFiles()
+
+        saveDefaultIfMissing("lang/en_US.yml", englishLanguageFile)
+        if (legacyMessagesFile.exists() && !hadLanguageFiles) {
+            // Preserve the old Spanish/custom messages as the Spanish file,
+            // then provide the bundled English file for the new format.
+            runCatching { legacyMessagesFile.copyTo(spanishLanguageFile, overwrite = false) }
+        } else {
+            saveDefaultIfMissing("lang/es_ES.yml", spanishLanguageFile)
         }
 
         // A normal persisted hologram, provided once for a new installation.
@@ -92,18 +97,19 @@ class ConfigManager(private val plugin: Plugin) {
         visibilityConfig = VisibilityConfig.from(if (visibilityFile.exists()) visibilityConfigFile else config)
         animationConfig = AnimationConfig.from(if (animationsFile.exists()) animationsConfig else config)
 
-        val langName = pluginConfig.language.lowercase()
-        val langFile = File(langFolder, "$langName.yml")
-        val fallbackLangFile = File(langFolder, "en_us.yml")
+        val langFile = findLanguageFile(pluginConfig.language)
+            ?: File(langFolder, "${pluginConfig.language}.yml")
+        val fallbackLangFile = findLanguageFile("en_US")
+            ?: File(langFolder, "en_US.yml")
 
         messages = if (langFile.exists()) {
-            loadYaml(langFile, "lang/en_us.yml")
+            loadYaml(langFile, "lang/en_US.yml")
         } else if (fallbackLangFile.exists()) {
-            loadYaml(fallbackLangFile, "lang/en_us.yml")
+            loadYaml(fallbackLangFile, "lang/en_US.yml")
         } else {
             // Check legacy messages.yml
             val legacyMessages = File(plugin.dataFolder, "messages.yml")
-            if (legacyMessages.exists()) loadYaml(legacyMessages, "lang/en_us.yml") else YamlConfiguration()
+            if (legacyMessages.exists()) loadYaml(legacyMessages, "lang/en_US.yml") else YamlConfiguration()
         }
 
         // Parsed messages are cached, so a language/prefix edit made before
@@ -113,8 +119,15 @@ class ConfigManager(private val plugin: Plugin) {
 
     fun getMessage(key: String, def: String = key): String {
         val message = messages.getString(key) ?: def
-        return MessageTemplateResolver.resolve(message, messages.getString("prefix").orEmpty())
+        return if (key.equals("prefix", ignoreCase = true)) {
+            message
+        } else {
+            withPrefix(message)
+        }
     }
+
+    fun withPrefix(message: String): String =
+        MessageTemplateResolver.resolve(message, messages.getString("prefix").orEmpty())
 
     private fun saveDefaultIfMissing(resourcePath: String, destination: File) {
         if (!destination.exists()) {
@@ -124,6 +137,16 @@ class ConfigManager(private val plugin: Plugin) {
             } catch (ignored: Exception) {
             }
         }
+    }
+
+    private fun hasLanguageFiles(): Boolean = langFolder.listFiles()
+        ?.any { it.isFile && it.extension.equals("yml", ignoreCase = true) }
+        ?: false
+
+    private fun findLanguageFile(language: String): File? {
+        val expectedName = "${language.substringBeforeLast(".yml", missingDelimiterValue = language)}.yml"
+        return langFolder.listFiles()
+            ?.firstOrNull { it.isFile && it.name.equals(expectedName, ignoreCase = true) }
     }
 
     private fun loadYaml(file: File, resourceName: String): FileConfiguration {

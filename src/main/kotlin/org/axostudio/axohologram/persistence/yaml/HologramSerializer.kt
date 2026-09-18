@@ -14,14 +14,24 @@ object HologramSerializer {
     fun serialize(hologram: Hologram): YamlConfiguration {
         val config = YamlConfiguration()
 
-        val loc = hologram.location
-        if (loc != null) {
-            config.set("location.world", loc.world?.name ?: "world")
-            config.set("location.x", loc.x)
-            config.set("location.y", loc.y)
-            config.set("location.z", loc.z)
-            config.set("location.yaw", loc.yaw)
-            config.set("location.pitch", loc.pitch)
+        if (hologram is org.axostudio.axohologram.core.hologram.model.AxoHologram) {
+            val pos = hologram.position
+            config.set("location.world", pos.worldName)
+            config.set("location.x", pos.x)
+            config.set("location.y", pos.y)
+            config.set("location.z", pos.z)
+            config.set("location.yaw", pos.yaw)
+            config.set("location.pitch", pos.pitch)
+        } else {
+            val loc = hologram.location
+            if (loc != null) {
+                config.set("location.world", loc.world?.name ?: "world")
+                config.set("location.x", loc.x)
+                config.set("location.y", loc.y)
+                config.set("location.z", loc.z)
+                config.set("location.yaw", loc.yaw)
+                config.set("location.pitch", loc.pitch)
+            }
         }
 
         config.set("enabled", if (hologram.isEnabled) null else false)

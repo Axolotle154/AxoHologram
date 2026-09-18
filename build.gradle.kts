@@ -4,7 +4,7 @@ plugins {
 }
 
 group = "org.axostudio"
-version = "3.2.0"
+version = "3.2.4"
 
 repositories {
     mavenLocal()
@@ -18,6 +18,9 @@ repositories {
 }
 
 dependencies {
+    // API Module (Java 8 compatible)
+    implementation(project(":api"))
+
     // Paper API
     compileOnly("io.papermc.paper:paper-api:[26.1.2.build,)")
 
@@ -77,6 +80,7 @@ tasks.processResources {
 tasks.jar {
     archiveFileName.set("AxoHologram-${project.version}.jar")
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    dependsOn(":api:jar")
     from({
         configurations.runtimeClasspath.get().map { dependency ->
             if (dependency.isDirectory) dependency else zipTree(dependency)

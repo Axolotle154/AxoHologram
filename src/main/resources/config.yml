@@ -3,7 +3,7 @@
 # ---------------------------------------------------------------- #
 
 general:
-  language: "es_es"
+  language: "es_ES"
   check-updates: true
   view-distance: 48
   visibility-check-interval: 20

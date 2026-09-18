@@ -88,10 +88,15 @@ public final class HologramPacketManager {
         PacketViewerTracker.LineKey key = new PacketViewerTracker.LineKey(hologram.getId(), pageIndex, lineIndex);
 
         destroyLine(viewerId, hologram.getId(), pageIndex, lineIndex);
+        long spawnToken = TRACKER.reserveSpawn(viewerId, key);
 
         Location spawnLoc = location.clone();
         getScheduler().runAtLocation(spawnLoc, () -> {
-            if (spawnLoc.getWorld() == null) return;
+            if (spawnLoc.getWorld() == null) {
+                TRACKER.cancelSpawn(viewerId, key, spawnToken);
+                return;
+            }
+            if (!TRACKER.isSpawnCurrent(viewerId, key, spawnToken)) return;
             TextDisplay display = DisplayPacketFactory.spawnTextDisplay(
                     spawnLoc,
                     billboard != null ? billboard : hologram.getBillboard(),
@@ -110,9 +115,22 @@ public final class HologramPacketManager {
                     0
             );
 
-            if (display == null) return;
-            TRACKER.trackDisplay(display.getUniqueId(), viewerId, hologram.getId(), pageIndex, lineIndex);
-            TRACKER.getPlayerEntities(viewerId).put(key, display.getUniqueId());
+            if (display == null) {
+                TRACKER.cancelSpawn(viewerId, key, spawnToken);
+                return;
+            }
+            if (!TRACKER.commitSpawn(
+                    viewerId,
+                    key,
+                    spawnToken,
+                    display.getUniqueId(),
+                    hologram.getId(),
+                    pageIndex,
+                    lineIndex
+            )) {
+                display.remove();
+                return;
+            }
 
             if (pluginInstance != null) {
                 player.showEntity(pluginInstance, display);
@@ -189,10 +207,15 @@ public final class HologramPacketManager {
         PacketViewerTracker.LineKey key = new PacketViewerTracker.LineKey(hologram.getId(), pageIndex, lineIndex);
 
         destroyLine(viewerId, hologram.getId(), pageIndex, lineIndex);
+        long spawnToken = TRACKER.reserveSpawn(viewerId, key);
 
         Location spawnLoc = location.clone();
         getScheduler().runAtLocation(spawnLoc, () -> {
-            if (spawnLoc.getWorld() == null) return;
+            if (spawnLoc.getWorld() == null) {
+                TRACKER.cancelSpawn(viewerId, key, spawnToken);
+                return;
+            }
+            if (!TRACKER.isSpawnCurrent(viewerId, key, spawnToken)) return;
             ItemDisplay display = DisplayPacketFactory.spawnItemDisplay(
                     spawnLoc,
                     billboard != null ? billboard : hologram.getBillboard(),
@@ -212,9 +235,22 @@ public final class HologramPacketManager {
                     0
             );
 
-            if (display == null) return;
-            TRACKER.trackDisplay(display.getUniqueId(), viewerId, hologram.getId(), pageIndex, lineIndex);
-            TRACKER.getPlayerEntities(viewerId).put(key, display.getUniqueId());
+            if (display == null) {
+                TRACKER.cancelSpawn(viewerId, key, spawnToken);
+                return;
+            }
+            if (!TRACKER.commitSpawn(
+                    viewerId,
+                    key,
+                    spawnToken,
+                    display.getUniqueId(),
+                    hologram.getId(),
+                    pageIndex,
+                    lineIndex
+            )) {
+                display.remove();
+                return;
+            }
 
             if (pluginInstance != null) {
                 player.showEntity(pluginInstance, display);
@@ -270,10 +306,15 @@ public final class HologramPacketManager {
         PacketViewerTracker.LineKey key = new PacketViewerTracker.LineKey(hologram.getId(), pageIndex, lineIndex);
 
         destroyLine(viewerId, hologram.getId(), pageIndex, lineIndex);
+        long spawnToken = TRACKER.reserveSpawn(viewerId, key);
 
         Location spawnLoc = location.clone();
         getScheduler().runAtLocation(spawnLoc, () -> {
-            if (spawnLoc.getWorld() == null) return;
+            if (spawnLoc.getWorld() == null) {
+                TRACKER.cancelSpawn(viewerId, key, spawnToken);
+                return;
+            }
+            if (!TRACKER.isSpawnCurrent(viewerId, key, spawnToken)) return;
             BlockDisplay display = DisplayPacketFactory.spawnBlockDisplay(
                     spawnLoc,
                     billboard != null ? billboard : hologram.getBillboard(),
@@ -292,9 +333,22 @@ public final class HologramPacketManager {
                     0
             );
 
-            if (display == null) return;
-            TRACKER.trackDisplay(display.getUniqueId(), viewerId, hologram.getId(), pageIndex, lineIndex);
-            TRACKER.getPlayerEntities(viewerId).put(key, display.getUniqueId());
+            if (display == null) {
+                TRACKER.cancelSpawn(viewerId, key, spawnToken);
+                return;
+            }
+            if (!TRACKER.commitSpawn(
+                    viewerId,
+                    key,
+                    spawnToken,
+                    display.getUniqueId(),
+                    hologram.getId(),
+                    pageIndex,
+                    lineIndex
+            )) {
+                display.remove();
+                return;
+            }
 
             if (pluginInstance != null) {
                 player.showEntity(pluginInstance, display);
@@ -337,6 +391,7 @@ public final class HologramPacketManager {
 
     public static void destroyLine(UUID viewerId, String hologramId, int pageIndex, int lineIndex) {
         PacketViewerTracker.LineKey key = new PacketViewerTracker.LineKey(hologramId, pageIndex, lineIndex);
+        TRACKER.cancelSpawn(viewerId, key);
         UUID displayId = TRACKER.getPlayerEntities(viewerId).remove(key);
         if (displayId != null) {
             removeEntity(displayId);
@@ -362,6 +417,7 @@ public final class HologramPacketManager {
     }
 
     public static void destroyHologram(UUID viewerId, String hologramId) {
+        TRACKER.cancelSpawnsForHologram(viewerId, hologramId);
         Map<PacketViewerTracker.LineKey, UUID> entities = TRACKER.getPlayerEntities(viewerId);
         for (PacketViewerTracker.LineKey key : new HashSet<>(entities.keySet())) {
             if (key.hologramId().equals(hologramId)) {
@@ -391,6 +447,7 @@ public final class HologramPacketManager {
     }
 
     public static void destroyOtherPages(UUID viewerId, String hologramId, int visiblePageIndex) {
+        TRACKER.cancelSpawnsForOtherPages(viewerId, hologramId, visiblePageIndex);
         Map<PacketViewerTracker.LineKey, UUID> entities = TRACKER.getPlayerEntities(viewerId);
         for (PacketViewerTracker.LineKey key : new HashSet<>(entities.keySet())) {
             if (key.hologramId().equals(hologramId) && key.pageIndex() != visiblePageIndex) {
@@ -420,6 +477,7 @@ public final class HologramPacketManager {
     }
 
     public static void destroyLinesExcept(UUID viewerId, String hologramId, int pageIndex, Set<Integer> keepLines) {
+        TRACKER.cancelSpawnsExcept(viewerId, hologramId, pageIndex, keepLines);
         Map<PacketViewerTracker.LineKey, UUID> entities = TRACKER.getPlayerEntities(viewerId);
         for (PacketViewerTracker.LineKey key : new HashSet<>(entities.keySet())) {
             if (key.hologramId().equals(hologramId) && key.pageIndex() == pageIndex) {

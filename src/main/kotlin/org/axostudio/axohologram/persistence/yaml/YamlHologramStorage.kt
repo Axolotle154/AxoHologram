@@ -2,6 +2,8 @@ package org.axostudio.axohologram.persistence.yaml
 
 import org.axostudio.axohologram.api.hologram.Hologram
 import org.axostudio.axohologram.common.validation.HologramId
+import org.axostudio.axohologram.persistence.HologramLoadFailure
+import org.axostudio.axohologram.persistence.HologramLoadReport
 import org.axostudio.axohologram.persistence.HologramStorage
 import org.bukkit.configuration.file.YamlConfiguration
 import java.io.File
@@ -15,34 +17,56 @@ class YamlHologramStorage(val baseFolder: File) : HologramStorage {
         }
     }
 
-    override fun loadAll(): Collection<Hologram> {
+    override fun loadAll(): Collection<Hologram> = loadAllWithReport().holograms
+
+    override fun loadAllWithReport(): HologramLoadReport {
         val list = mutableListOf<Hologram>()
+        val failures = mutableListOf<HologramLoadFailure>()
         val files = mutableListOf<File>()
+        var skippedMediaFiles = 0
         collectYamlFiles(baseFolder, files)
 
         for (file in files) {
             val id = file.name.removeSuffix(".yml")
             try {
-                val yaml = YamlConfiguration.loadConfiguration(file)
+                val yaml = YamlConfiguration().also { it.load(file) }
                 // 3.x stored image/video holograms beside ordinary holograms.
                 // MediaManager imports them separately into the media runtime.
-                if (yaml.getString("type")?.uppercase() in setOf("IMAGE", "VIDEO") && yaml.isSet("url")) continue
+                if (yaml.getString("type")?.uppercase() in setOf("IMAGE", "VIDEO") && yaml.isSet("url")) {
+                    skippedMediaFiles++
+                    continue
+                }
                 val holo = HologramDeserializer.deserialize(id, yaml)
+                val parentFolder = file.parentFile
+                if (parentFolder != null && !parentFolder.equals(baseFolder) && holo.group.isBlank()) {
+                    holo.group = parentFolder.name
+                }
                 list.add(holo)
             } catch (e: Exception) {
-                // Log error
+                failures += HologramLoadFailure(
+                    id = id,
+                    source = file.relativeToOrSelf(baseFolder).invariantSeparatorsPath,
+                    reason = e.message?.lineSequence()?.firstOrNull()?.take(180)
+                        ?: e.javaClass.simpleName
+                )
             }
         }
-        return list
+        return HologramLoadReport(list, failures, skippedMediaFiles)
     }
 
     override fun load(id: String): Hologram? {
         if (!HologramId.isValid(id)) return null
-        val file = safeFile(baseFolder, id) ?: return null
-        if (!file.exists()) return null
+        val files = mutableListOf<File>()
+        collectYamlFiles(baseFolder, files)
+        val file = files.firstOrNull { it.name.equals("$id.yml", ignoreCase = true) } ?: return null
         return try {
-            val yaml = YamlConfiguration.loadConfiguration(file)
-            HologramDeserializer.deserialize(id, yaml)
+            val yaml = YamlConfiguration().also { it.load(file) }
+            val holo = HologramDeserializer.deserialize(id, yaml)
+            val parentFolder = file.parentFile
+            if (parentFolder != null && !parentFolder.equals(baseFolder) && holo.group.isBlank()) {
+                holo.group = parentFolder.name
+            }
+            holo
         } catch (e: Exception) {
             null
         }
@@ -57,7 +81,11 @@ class YamlHologramStorage(val baseFolder: File) : HologramStorage {
         // A group change moves the file. Remove any previous copy first so reload
         // cannot resurrect a stale duplicate under the old group directory.
         delete(hologram.id)
-        val targetFolder = if (hologram.group.isNotBlank()) {
+        val isRoot = hologram.group.isBlank() ||
+                hologram.group.equals("root", ignoreCase = true) ||
+                hologram.group.equals("none", ignoreCase = true)
+
+        val targetFolder = if (!isRoot) {
             HologramId.requireValid(hologram.group, "Group id")
             File(baseFolder, hologram.group).also { if (!it.exists()) it.mkdirs() }
         } else {

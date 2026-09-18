@@ -3,7 +3,7 @@ package org.axostudio.axohologram.config
 import org.bukkit.configuration.file.FileConfiguration
 
 data class PluginConfig(
-    val language: String = "en_us",
+    val language: String = "es_ES",
     val checkUpdates: Boolean = true,
     val defaultViewDistance: Int = 48,
     val defaultLineHeight: Double = 0.28,
@@ -17,7 +17,7 @@ data class PluginConfig(
         fun from(config: FileConfiguration?): PluginConfig {
             if (config == null) return PluginConfig()
             return PluginConfig(
-                language = config.getString("general.language", "en_us") ?: "en_us",
+                language = config.getString("general.language", "es_ES") ?: "es_ES",
                 checkUpdates = config.getBoolean("general.check-updates", true),
                 defaultViewDistance = config.getInt("general.view-distance", 48),
                 defaultLineHeight = config.getDouble(

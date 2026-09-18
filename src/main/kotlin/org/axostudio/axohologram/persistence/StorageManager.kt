@@ -14,6 +14,8 @@ class StorageManager(
 
     fun loadAll(): Collection<Hologram> = storage.loadAll()
 
+    fun loadAllWithReport(): HologramLoadReport = storage.loadAllWithReport()
+
     fun save(hologram: Hologram) = storage.save(hologram)
 
     fun saveAll(holograms: Collection<Hologram>) = storage.saveAll(holograms)

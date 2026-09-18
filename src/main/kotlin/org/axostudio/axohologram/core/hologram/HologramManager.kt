@@ -21,13 +21,17 @@ class HologramManager(
 ) : HologramService {
 
     var onSaveRequested: (() -> Unit)? = null
-    var onReloadRequested: (() -> Unit)? = null
+    var onReloadRequested: (() -> HologramReloadReport)? = null
     var onHologramCreated: ((Hologram) -> Unit)? = null
     var onHologramDeleted: ((Hologram) -> Unit)? = null
     var onHologramUpdated: ((Hologram) -> Unit)? = null
     var onHologramSpawn: ((Player, Hologram) -> Unit)? = null
     var onHologramDespawn: ((Player, Hologram) -> Unit)? = null
     var onHologramActionsRequested: ((Player, Hologram, org.axostudio.axohologram.api.action.HologramClickType) -> Unit)? = null
+
+    @Volatile
+    var lastReloadReport: HologramReloadReport = HologramReloadReport.EMPTY
+        private set
 
     override fun get(id: String): Optional<Hologram> {
         return Optional.ofNullable(repository.get(id))
@@ -170,7 +174,12 @@ class HologramManager(
     }
 
     override fun reload() {
-        onReloadRequested?.invoke()
+        lastReloadReport = onReloadRequested?.invoke() ?: HologramReloadReport.EMPTY
+    }
+
+    fun reloadWithReport(): HologramReloadReport {
+        reload()
+        return lastReloadReport
     }
 
     override fun saveAll() {
