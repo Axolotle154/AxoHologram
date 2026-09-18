@@ -4,7 +4,7 @@ plugins {
 }
 
 group = "org.axostudio"
-version = "3.2.4"
+version = "3.2.5"
 
 repositories {
     mavenLocal()
